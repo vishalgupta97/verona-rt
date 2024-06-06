@@ -51,16 +51,22 @@ namespace verona::rt
 
     void add_read()
     {
+       Logging::cout() << "Adding new reader" << Logging::endl;
       count.fetch_add(2);
     }
 
-    // true means last reader and writer is waiting, false otherwise
+    bool any_reader() {
+      return (count.load(std::memory_order_acquire) != 0);
+    }
+
+    // true means last reader is waiting, false otherwise
     bool release_read()
     {
-      if (count.fetch_sub(2) == 3)
+      Logging::cout() << "Releasing existing reader" << Logging::endl;
+      if (count.fetch_sub(2) == 2)
       {
         Systematic::yield();
-        assert(count.load() == 1);
+        assert(count.load() == 0);
         count.store(0, std::memory_order_relaxed);
         return true;
       }
@@ -69,6 +75,8 @@ namespace verona::rt
 
     bool try_write()
     {
+      assert(true); // TODO: Remove this. Currently this doesn't support writers for read-write locks.
+
       if (count.load(std::memory_order_acquire) == 0)
         return true;
 
@@ -103,12 +111,27 @@ namespace verona::rt
     template<typename T>
     friend class Noticeboard;
 
+    /**
+     * MCS Queue having both readers and writers;
+    */
     std::atomic<Slot*> last_slot{nullptr};
+
+    /**
+     * Tells if a behavior with write access has access to the Cown.
+    */
+    bool is_writer_at_head = false;
+
+    /**
+     * Tells if a behavior with write access is waiting in the queue.
+    */
+    bool writer_waiting = false;
 
     /*
      * Cown's read ref count.
      * Bottom bit is used to signal a waiting write.
      * Remaining bits are the count.
+     * 
+     * Currently it is only used by readers.
      */
     ReadRefCount read_ref_count;
 

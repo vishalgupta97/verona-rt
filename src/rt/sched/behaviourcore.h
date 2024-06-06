@@ -22,7 +22,9 @@ namespace verona::rt
     Request(Cown* cown) : _cown(cown) {}
 
   public:
-    Request() : _cown(nullptr) {}
+    Request() : _cown(nullptr) {
+      Logging::cout() <<  "Inside request constructor" << Logging::endl;
+    }
 
     Cown* cown()
     {
@@ -31,6 +33,7 @@ namespace verona::rt
 
     bool is_read()
     {
+      Logging::cout() <<  "is_read" << Logging::endl;
       return ((uintptr_t)_cown & READ_FLAG);
     }
 
@@ -46,11 +49,13 @@ namespace verona::rt
 
     static Request write(Cown* cown)
     {
+      Logging::cout() <<  "Write request" << Logging::endl;
       return Request(cown);
     }
 
     static Request read(Cown* cown)
     {
+      Logging::cout() <<  "Read request" << Logging::endl;
       return Request((Cown*)((uintptr_t)cown | READ_FLAG));
     }
   };
@@ -78,7 +83,33 @@ namespace verona::rt
      */
     std::atomic<uintptr_t> status;
 
-    Slot(Cown* cown) : cown(cown), status(0) {}
+    /**
+     * Set to true if the cown is read only.
+    */
+    bool read_only;
+
+    /**
+     * Set to true if during traversal, no new writer is found and CAS is already done.
+     * Current readers then should not do a CAS.
+    */
+    bool no_writer_waiting;
+
+    /**
+     * Next slot can be in one of two cases
+     * 1. Either immediate next slot
+     * 2. Next writer (Only for readers)
+    */
+    Slot* next_slot;
+
+    Slot(Cown* cown) : cown(cown), status(0), read_only(false), no_writer_waiting(false), next_slot(nullptr) {}
+
+    bool is_read_only() {
+      return read_only;
+    }
+
+    void set_read_only() {
+      read_only = true;
+    }
 
     bool is_ready()
     {
@@ -118,6 +149,16 @@ namespace verona::rt
     void set_behaviour(BehaviourCore* b)
     {
       status.store((uintptr_t)b, std::memory_order_release);
+    }
+
+    Slot* get_next_slot()
+    {
+      return next_slot;
+    }
+
+    void set_next_slot(Slot* n)
+    {
+      next_slot = n;
     }
 
     void release();
@@ -452,7 +493,7 @@ namespace verona::rt
           body = body_next;
 
           // Extend the chain of behaviours linking on this behaviour
-          last_slot->set_behaviour(body);
+          last_slot->set_behaviour(body); //TODO: Check if set_next_node need to be called here
           last_slot = std::get<1>(indexes[i]);
         }
 
@@ -465,9 +506,18 @@ namespace verona::rt
         yield();
         if (prev == nullptr)
         {
-          // this is wrong - should only do it for the last one
-          Logging::cout() << "Acquired cown: " << cown << " for behaviour "
+          if(last_slot->is_read_only()) {
+          Logging::cout() << "Acquired read cown head of queue: " << cown << " for behaviour "
                           << body << Logging::endl;
+            cown->is_writer_at_head = false;
+            cown->read_ref_count.add_read();
+            assert(cown->writer_waiting == false);
+          } else {
+            Logging::cout() << "Acquired write cown head of queue: " << cown << " for behaviour "
+                          << body << Logging::endl;
+            cown->is_writer_at_head = true;
+            assert(!cown->read_ref_count.any_reader()); // TODO: Fix this to waiter for readers
+          }
 
           ec[std::get<0>(indexes[first_chain_index])]++;
 
@@ -510,7 +560,44 @@ namespace verona::rt
           Cown::release(ThreadAlloc::get(), cown);
 
         yield();
+
+        if (last_slot->is_read_only()) {
+          if(!cown->is_writer_at_head && !cown->writer_waiting) {
+              Logging::cout() << "Acquired read cown: " << cown << " for behaviour "
+                              << body << Logging::endl;
+              cown->read_ref_count.add_read();
+              ec[std::get<0>(indexes[first_chain_index])]++;
+              yield();
+              if (transfer_count) {
+                Logging::cout() << "Releasing transferred count " << transfer_count
+                                << Logging::endl;
+                // Release transfer_count - 1 times, we needed one as we woke up the
+                // cown, but the rest were not required.
+                for (int j = 0; j < transfer_count - 1; j++)
+                  Cown::release(ThreadAlloc::get(), cown);
+              }
+              else {
+                Logging::cout()
+                  << "Acquiring reference count on cown: " << cown << Logging::endl;
+                // We didn't have any RCs passed in, so we need to acquire one.
+                Cown::acquire(cown);
+            } 
+          } else {
+            Logging::cout()
+                  << "Cown busy for reader: " << cown 
+                  << " for behaviour " << body
+                  << " is_writer_at_head: " << cown->is_writer_at_head 
+                  << " writer_waiting: " << cown->writer_waiting << Logging::endl;
+          }
+        } else {
+          Logging::cout()
+                  << "Cown busy for writer: " << cown 
+                  << " for behaviour " << body << Logging::endl;
+          cown->writer_waiting = true;
+        }
+
         prev->set_behaviour(first_body);
+        prev->set_next_slot(last_slot);
         yield();
       }
 
@@ -575,9 +662,17 @@ namespace verona::rt
     if (cown == nullptr)
       return;
 
+    if(no_writer_waiting) {
+      assert(is_read_only() == true);
+      assert(next_slot == nullptr);
+      cown->read_ref_count.release_read();
+      return;
+    }
+
     if (is_ready())
     {
       yield();
+
       auto slot_addr = this;
       // Attempt to CAS cown to null.
       if (cown->last_slot.compare_exchange_strong(
@@ -587,10 +682,16 @@ namespace verona::rt
         Logging::cout() << "No more work for cown " << cown << Logging::endl;
         // Success, no successor, release scheduler threads reference count.
         shared::release(ThreadAlloc::get(), cown);
+        assert(cown->read_ref_count.any_reader() == false);
+        cown->writer_waiting = false;
         return;
       }
 
       yield();
+
+      Logging::cout() << "Another thread is extending the chain thread: " << this
+                      << " for cown " << cown
+                      << " is reader " << is_read_only() << Logging::endl;
 
       // If we failed, then the another thread is extending the chain
       while (is_ready())
@@ -601,9 +702,97 @@ namespace verona::rt
     }
 
     assert(is_behaviour());
-    // Wake up the next behaviour.
-    yield();
-    get_behaviour()->resolve();
-    yield();
+
+    if(is_read_only()) {
+      Logging::cout() << "Reader releasing the cown: " << cown << Logging::endl;
+      if(cown->read_ref_count.release_read()) {
+        yield();
+        Logging::cout() << "Last reader waking up writer: " << cown << " for behaviour "
+                        << get_behaviour() << Logging::endl;
+        // TODO: Change below condition to check if the next behavior is for write or not.
+        assert(next_slot->is_read_only() == true); //TODO: Check if this condition is correct. Maybe new readers join.
+        // TODO: Check if next_slot will always be valid
+        cown->is_writer_at_head = true;
+        next_slot->get_behaviour()->resolve(); // Wakeup next behaviour.
+        yield();
+      }
+    } else {
+      if(next_slot->is_read_only() == false) {
+        yield();
+        Logging::cout() << "Writer waking up next writer: " << cown << " for behaviour "
+                        << next_slot->get_behaviour() << Logging::endl;
+        cown->is_writer_at_head = true;
+        get_behaviour()->resolve(); // Wakeup next behaviour
+        yield(); 
+        //TODO: Check if waiter_pending bit and head_of_queue needs to be reset.
+      } else {
+
+        cown->is_writer_at_head = false;
+
+        /**
+         * Traverse the queue to find any writer.
+         * Wakeup all the readers.
+         * Set all reader next to the next writer.
+        */
+
+        std::vector<Slot*> next_pending_readers;
+        Slot* next_traversal_slot = this;
+        Slot* writer_slot = nullptr;
+
+        while(true) {
+          if(next_traversal_slot->is_ready()) {
+            // Check if at end of the queue.
+            yield();
+            // Attempt to CAS cown to null.
+            if (cown->last_slot.compare_exchange_strong(
+                  next_traversal_slot, nullptr, std::memory_order_acq_rel))
+            {
+              yield();
+              Logging::cout() << "No more work for cown " << cown << Logging::endl;
+              // Success, no successor, release scheduler threads reference count.
+              shared::release(ThreadAlloc::get(), cown);
+              writer_slot = nullptr;
+              Logging::cout() << "No pending writer reader: " << next_traversal_slot 
+                              << " for cown" << cown 
+                              << " for behaviour " << next_traversal_slot->get_behaviour() << Logging::endl;
+              next_traversal_slot->no_writer_waiting = true;
+              cown->writer_waiting = false;
+              break;
+            }
+
+            assert(false); // TODO: Fix this to address case when the queue is extended while being traversed.
+
+            yield();
+
+            // If we failed, then the another thread is extending the chain
+            while (next_traversal_slot->is_ready())
+            {
+              Systematic::yield_until([next_traversal_slot]() { return !(next_traversal_slot->is_ready()); });
+              Aal::pause();
+            }
+
+            break;
+          }
+          
+          assert(next_traversal_slot->is_behaviour());
+          if(next_traversal_slot->next_slot->is_read_only())
+            next_pending_readers.push_back(next_traversal_slot);
+          else {
+            writer_slot = next_traversal_slot;
+            break;
+          }
+          next_traversal_slot = next_traversal_slot->next_slot;
+        }
+
+        for(auto reader: next_pending_readers) {
+          Logging::cout() << "Acquired read cown during writer traversal: " << cown << " for behaviour "
+                              << reader->get_behaviour() << Logging::endl;
+          cown->read_ref_count.add_read();
+          reader->next_slot = writer_slot;
+          //reader->set_behaviour(writer_slot->get_behaviour());
+          reader->get_behaviour()->resolve();
+        }
+      }
+    }
   }
 } // namespace verona::rt

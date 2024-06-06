@@ -6,10 +6,15 @@
 
 using namespace verona::cpp;
 
-struct Account
+class Account
 {
-  int balance;
-  Account(int balance) : balance(balance) {}
+  public:
+    int balance;
+    Account(int balance) : balance(balance) {}
+
+    uint64_t get_addr() {
+      return (uint64_t)this;
+    }
 };
 
 void test_read_only()
@@ -22,27 +27,42 @@ void test_read_only()
 
   cown_ptr<Account> common_account = make_cown<Account>(100);
   when(common_account) <<
-    [](acquired_cown<Account> account) { account->balance -= 10; };
+    [](acquired_cown<Account> account) { account->balance -= 10; 
+    Logging::cout() <<  "first common account " << account->balance << Logging::endl;
+    };
 
   for (size_t i = 0; i < num_accounts; i++)
   {
     when(accounts[i], read(common_account))
-      << [](
-           acquired_cown<Account> write_account,
-           acquired_cown<const Account> ro_account) {
+      << [i](
+           auto write_account,
+           auto ro_account) {
+           Logging::cout() <<  "write account begin " << i << " balance: " << write_account->balance << Logging::endl;
+           Logging::cout() <<  "ro account begin " << ro_account->balance << Logging::endl;
            write_account->balance = ro_account->balance;
+           for(int j = 0; j < 10; j++)
+            Systematic::yield();
+           Logging::cout() <<  "write account end " << i << " balance: " << write_account->balance << Logging::endl;
+           Logging::cout() <<  "ro account end " << ro_account->balance << Logging::endl;
          };
 
-    when(read(accounts[i])) << [](acquired_cown<const Account> account) {
+    when(read(accounts[i])) << [i](acquired_cown<const Account> account) {
+      Logging::cout() <<  "read account begin " << i << " balance: " <<account->balance << Logging::endl;
+      for(int j = 0; j < 10; j++)
+            Systematic::yield();
       check(account->balance == 90);
+      Logging::cout() <<  "read account end " << i << " balance: " << account->balance << Logging::endl;
     };
   }
 
   when(common_account) <<
-    [](acquired_cown<Account> account) { account->balance += 10; };
+    [](acquired_cown<Account> account) { account->balance += 10; 
+    Logging::cout() <<  "second common account " << account->balance << Logging::endl;
+    };
 
   when(read(common_account)) << [](acquired_cown<const Account> account) {
     check(account->balance == 100);
+    Logging::cout() <<  "third common account " << account->balance << Logging::endl;
   };
 }
 
