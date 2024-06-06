@@ -480,7 +480,7 @@ namespace verona::rt
           auto body_next = bodies[std::get<0>(indexes[i])];
           if (body_next == body)
           {
-            Logging::cout() << "Duplicate cown: " << cown << " for behaviour "
+            Logging::cout() << "Duplicate cown " << cown << " for behaviour "
                             << body << Logging::endl;
             // We need to reduce the execution count by one, as we can't wait
             // for ourselves.
@@ -507,13 +507,13 @@ namespace verona::rt
         if (prev == nullptr)
         {
           if(last_slot->is_read_only()) {
-          Logging::cout() << "Acquired read cown head of queue: " << cown << " for behaviour "
+          Logging::cout() << "Acquired read head of queue for cown " << cown << " for behaviour "
                           << body << Logging::endl;
             cown->is_writer_at_head = false;
             cown->read_ref_count.add_read();
             assert(cown->writer_waiting == false);
           } else {
-            Logging::cout() << "Acquired write cown head of queue: " << cown << " for behaviour "
+            Logging::cout() << "Acquired write head of queue for cown " << cown << " for behaviour "
                           << body << Logging::endl;
             cown->is_writer_at_head = true;
             assert(!cown->read_ref_count.any_reader()); // TODO: Fix this to waiter for readers
@@ -535,14 +535,14 @@ namespace verona::rt
           else
           {
             Logging::cout()
-              << "Acquiring reference count on cown: " << cown << Logging::endl;
+              << "Acquiring reference count on cown " << cown << Logging::endl;
             // We didn't have any RCs passed in, so we need to acquire one.
             Cown::acquire(cown);
           }
           continue;
         }
 
-        Logging::cout() << "Waiting for cown: " << cown << " from slot " << prev
+        Logging::cout() << "Waiting for cown " << cown << " from slot " << prev
                         << " for behaviour " << body << Logging::endl;
 
         yield();
@@ -563,7 +563,7 @@ namespace verona::rt
 
         if (last_slot->is_read_only()) {
           if(!cown->is_writer_at_head && !cown->writer_waiting) {
-              Logging::cout() << "Acquired read cown: " << cown << " for behaviour "
+              Logging::cout() << "Acquired read cown " << cown << " for behaviour "
                               << body << Logging::endl;
               cown->read_ref_count.add_read();
               ec[std::get<0>(indexes[first_chain_index])]++;
@@ -578,20 +578,20 @@ namespace verona::rt
               }
               else {
                 Logging::cout()
-                  << "Acquiring reference count on cown: " << cown << Logging::endl;
+                  << "Acquiring reference count on cown " << cown << Logging::endl;
                 // We didn't have any RCs passed in, so we need to acquire one.
                 Cown::acquire(cown);
             } 
           } else {
             Logging::cout()
-                  << "Cown busy for reader: " << cown 
+                  << "Busy for reader cown " << cown 
                   << " for behaviour " << body
                   << " is_writer_at_head: " << cown->is_writer_at_head 
                   << " writer_waiting: " << cown->writer_waiting << Logging::endl;
           }
         } else {
           Logging::cout()
-                  << "Cown busy for writer: " << cown 
+                  << "Busy for writer cown " << cown 
                   << " for behaviour " << body << Logging::endl;
           cown->writer_waiting = true;
         }
@@ -704,22 +704,24 @@ namespace verona::rt
     assert(is_behaviour());
 
     if(is_read_only()) {
-      Logging::cout() << "Reader releasing the cown: " << cown << Logging::endl;
+      Logging::cout() << "Reader releasing the cown " << cown << Logging::endl;
       if(cown->read_ref_count.release_read()) {
         yield();
-        Logging::cout() << "Last reader waking up writer: " << cown << " for behaviour "
+        Logging::cout() << "Last reader waking up writer for cown " << cown << " for behaviour "
                         << get_behaviour() << Logging::endl;
         // TODO: Change below condition to check if the next behavior is for write or not.
-        assert(next_slot->is_read_only() == true); //TODO: Check if this condition is correct. Maybe new readers join.
+        assert(next_slot != nullptr);
+        assert(next_slot->is_read_only() == false); //TODO: Check if this condition is correct. Maybe new readers join.
         // TODO: Check if next_slot will always be valid
         cown->is_writer_at_head = true;
-        next_slot->get_behaviour()->resolve(); // Wakeup next behaviour.
+        //next_slot->get_behaviour()->resolve(); // Wakeup next behaviour.
+        get_behaviour()->resolve(); // Wakeup next behaviour.
         yield();
       }
     } else {
       if(next_slot->is_read_only() == false) {
         yield();
-        Logging::cout() << "Writer waking up next writer: " << cown << " for behaviour "
+        Logging::cout() << "Writer waking up next writer for cown " << cown << " for behaviour "
                         << next_slot->get_behaviour() << Logging::endl;
         cown->is_writer_at_head = true;
         get_behaviour()->resolve(); // Wakeup next behaviour
@@ -785,12 +787,16 @@ namespace verona::rt
         }
 
         for(auto reader: next_pending_readers) {
-          Logging::cout() << "Acquired read cown during writer traversal: " << cown << " for behaviour "
-                              << reader->get_behaviour() << Logging::endl;
+          Logging::cout() << "Acquired read cown during writer traversal cown " << cown << " for behaviour "
+                              << reader->get_behaviour();
+          if(writer_slot)
+            Logging::cout() << " next writer behaviour " << writer_slot->get_behaviour() << Logging::endl;
           cown->read_ref_count.add_read();
-          reader->next_slot = writer_slot;
-          //reader->set_behaviour(writer_slot->get_behaviour());
           reader->get_behaviour()->resolve();
+          if(writer_slot != nullptr) {
+            reader->next_slot = writer_slot->next_slot;
+            reader->set_behaviour(writer_slot->get_behaviour());
+          }
         }
       }
     }
