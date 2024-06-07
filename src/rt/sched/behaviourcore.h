@@ -685,7 +685,9 @@ namespace verona::rt
             slot_addr, nullptr, std::memory_order_acq_rel))
       {
         yield();
-        Logging::cout() << "No more work for cown " << cown << Logging::endl;
+        if(is_read_only())
+          cown->read_ref_count.release_read();
+        Logging::cout() << "No more work for cown " << cown << " read reference count: " << cown->read_ref_count.count << Logging::endl;
         // Success, no successor, release scheduler threads reference count.
         assert(cown->read_ref_count.any_reader() == false);
         cown->writer_waiting = false;
