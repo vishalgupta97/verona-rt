@@ -101,7 +101,12 @@ namespace verona::rt
     */
     Slot* next_slot;
 
-    Slot(Cown* cown) : cown(cown), status(0), read_only(false), no_writer_waiting(false), next_slot(nullptr) {}
+    /**
+     * Only used by readers to point to the next writer behaviour if any.
+    */
+    BehaviourCore* next_writer_behaviour;
+
+    Slot(Cown* cown) : cown(cown), status(0), read_only(false), no_writer_waiting(false), next_slot(nullptr), next_writer_behaviour(nullptr) {}
 
     bool is_read_only() {
       return read_only;
@@ -665,7 +670,8 @@ namespace verona::rt
     if(no_writer_waiting) {
       assert(is_read_only() == true);
       assert(next_slot == nullptr);
-      cown->read_ref_count.release_read();
+      if(cown->read_ref_count.release_read())
+         shared::release(ThreadAlloc::get(), cown);
       return;
     }
 
@@ -752,7 +758,6 @@ namespace verona::rt
               yield();
               Logging::cout() << "No more work for cown " << cown << Logging::endl;
               // Success, no successor, release scheduler threads reference count.
-              shared::release(ThreadAlloc::get(), cown);
               writer_slot = nullptr;
               Logging::cout() << "No pending writer reader: " << next_traversal_slot 
                               << " for cown" << cown 
@@ -792,11 +797,16 @@ namespace verona::rt
           if(writer_slot)
             Logging::cout() << " next writer behaviour " << writer_slot->get_behaviour() << Logging::endl;
           cown->read_ref_count.add_read();
-          reader->get_behaviour()->resolve();
+          // if(writer_slot != nullptr) {
+          //   reader->next_slot = writer_slot->next_slot;
+          //   reader->next_writer_behaviour = writer_slot->get_behaviour();
+          // }
+          BehaviourCore* rb = reader->get_behaviour();
           if(writer_slot != nullptr) {
             reader->next_slot = writer_slot->next_slot;
             reader->set_behaviour(writer_slot->get_behaviour());
           }
+          rb->resolve();
         }
       }
     }
