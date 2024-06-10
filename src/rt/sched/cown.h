@@ -122,6 +122,11 @@ namespace verona::rt
     bool is_writer_at_head = false;
 
     /**
+     * Next writer in the queue;
+    */
+    std::atomic<Slot*> next_writer{nullptr};
+
+    /**
      * Tells if a behavior with write access is waiting in the queue.
     */
     bool writer_waiting = false;

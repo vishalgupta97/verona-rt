@@ -517,14 +517,15 @@ namespace verona::rt
             cown->is_writer_at_head = false;
             cown->read_ref_count.add_read();
             assert(cown->writer_waiting == false);
+            ec[std::get<0>(indexes[first_chain_index])]++;
           } else {
             Logging::cout() << "Acquired write head of queue for cown " << cown << " for behaviour "
                           << body << Logging::endl;
             cown->is_writer_at_head = true;
-            assert(!cown->read_ref_count.any_reader()); // TODO: Fix this to waiter for readers
+            if(!cown->read_ref_count.any_reader()) {
+              ec[std::get<0>(indexes[first_chain_index])]++;
+            }
           }
-
-          ec[std::get<0>(indexes[first_chain_index])]++;
 
           yield();
 
@@ -762,7 +763,7 @@ namespace verona::rt
               // Success, no successor, release scheduler threads reference count.
               writer_slot = nullptr;
               Logging::cout() << "No pending writer reader: " << next_traversal_slot 
-                              << " for cown" << cown 
+                              << " for cown " << cown 
                               << " for behaviour " << next_traversal_slot->get_behaviour() << Logging::endl;
               next_traversal_slot->no_writer_waiting = true;
               cown->writer_waiting = false;
@@ -798,6 +799,8 @@ namespace verona::rt
                               << reader->get_behaviour();
           if(writer_slot)
             Logging::cout() << " next writer behaviour " << writer_slot->get_behaviour() << Logging::endl;
+          else
+            Logging::cout() << Logging::endl;
           cown->read_ref_count.add_read();
           // if(writer_slot != nullptr) {
           //   reader->next_slot = writer_slot->next_slot;
@@ -807,6 +810,9 @@ namespace verona::rt
           if(writer_slot != nullptr) {
             reader->next_slot = writer_slot->next_slot;
             reader->set_behaviour(writer_slot->get_behaviour());
+          } else {
+            reader->next_slot = nullptr;
+            reader->no_writer_waiting = true;
           }
           rb->resolve();
         }
