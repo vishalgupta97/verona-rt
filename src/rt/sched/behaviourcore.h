@@ -522,6 +522,8 @@ namespace verona::rt
         last_slot->reset_status();
 
         auto curr_slot = last_slot;
+        curr_slot->set_behaviour(first_body);
+        yield();
 
         if(curr_slot->is_read_only()) {
           auto prev_slot = cown->last_slot.exchange(curr_slot, std::memory_order_acq_rel);
@@ -573,8 +575,6 @@ namespace verona::rt
                               << " prev slot read only " << prev_slot->is_read_only()
                               << " prev slot next read only " << prev_slot->is_next_slot_read_only() << Logging::endl;
               yield();
-              curr_slot->set_behaviour(first_body);
-              yield();
               prev_slot->set_next_slot(curr_slot); 
               yield();
               Logging::cout() << curr_slot << " Reader Set next of previous slot cown " << cown
@@ -587,8 +587,6 @@ namespace verona::rt
                             << " behaviour " << first_body << Logging::endl;
               yield();
               cown->read_ref_count.add_read();
-              yield();
-              curr_slot->set_behaviour(first_body);
               yield();
               prev_slot->set_next_slot(curr_slot); 
               yield();
@@ -640,8 +638,6 @@ namespace verona::rt
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                             << " behaviour " << first_body << Logging::endl;
             prev_slot->set_next_slot_writer();
-            yield();
-            curr_slot->set_behaviour(first_body);
             yield();
             prev_slot->set_next_slot(curr_slot);
             Logging::cout() << curr_slot << " Writer Set next of previous slot cown " << cown
@@ -737,6 +733,15 @@ namespace verona::rt
                               << " writer " << w
                             << " behaviour " << get_behaviour() << Logging::endl;
               w->blocked = false;
+              if(w->is_ready()) {
+                yield();
+                while (w->is_ready())
+                {
+                  Systematic::yield_until([w]() { return !(w->is_ready()); });
+                  Aal::pause();
+                }
+              }
+              assert(w->is_behaviour());
               w->get_behaviour()->resolve();
             } else {
               Logging::cout() << this << " No more work for cown " << 
@@ -770,6 +775,15 @@ namespace verona::rt
                               << " writer " << w
                             << " behaviour " << get_behaviour() << Logging::endl;
           w->blocked = false;
+          if(w->is_ready()) {
+            yield();
+            while (w->is_ready())
+            {
+              Systematic::yield_until([w]() { return !(w->is_ready()); });
+              Aal::pause();
+            }
+          }
+          assert(w->is_behaviour());
           w->get_behaviour()->resolve();
         } else {
           Logging::cout() << this << " No more work for cown " << 
@@ -821,11 +835,20 @@ namespace verona::rt
           curr_slot = curr_slot->next_slot;
         }
 
-        for(auto readers: next_pending_readers) {
+        for(auto reader: next_pending_readers) {
           yield();
-          readers->blocked = false;
+          reader->blocked = false;
           yield();
-          readers->get_behaviour()->resolve();
+          if(reader->is_ready()) {
+            yield();
+            while (reader->is_ready())
+            {
+              Systematic::yield_until([reader]() { return !(reader->is_ready()); });
+              Aal::pause();
+            }
+          }
+          assert(reader->is_behaviour());
+          reader->get_behaviour()->resolve();
         }
 
       } else {
@@ -834,6 +857,15 @@ namespace verona::rt
                   << " next slot " << next_slot 
                     << " behaviour " << get_behaviour() << Logging::endl;
           next_slot->blocked = false;
+          if(next_slot->is_ready()) {
+            yield();
+            while (next_slot->is_ready())
+            {
+              Systematic::yield_until([this]() { return !(next_slot->is_ready()); });
+              Aal::pause();
+            }
+          }
+          assert(next_slot->is_behaviour());
           next_slot->get_behaviour()->resolve();
       }
     }
