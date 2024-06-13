@@ -144,5 +144,6 @@ void test_read_only_fast_send()
 int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
+  //harness.run(test_read_only);
   harness.run(test_read_only_nested);
 }

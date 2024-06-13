@@ -117,19 +117,9 @@ namespace verona::rt
     std::atomic<Slot*> last_slot{nullptr};
 
     /**
-     * Tells if a behavior with write access has access to the Cown.
-    */
-    bool is_writer_at_head = false;
-
-    /**
      * Next writer in the queue;
     */
     std::atomic<Slot*> next_writer{nullptr};
-
-    /**
-     * Tells if a behavior with write access is waiting in the queue.
-    */
-    bool writer_waiting = false;
 
     /*
      * Cown's read ref count.

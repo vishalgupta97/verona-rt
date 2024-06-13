@@ -3,28 +3,69 @@
 ## Locking
 
 ```c
-within_2pl_acquire_phase(cown, curr_slot) {
-    prev_slot = XCHG(cown->tail, curr_slot)
+enum slot_type {
+    NONE,
+    READER,
+    WRITER
+};
 
-    if(prev_slot == NULL) {
-        if(reader(curr_slot)) {
-            cown->is_writer_at_head = false;
+struct slot {
+    slot_type type; 
+    struct slot next_slot = NULL;
+    union {
+        atomic_t state;
+        struct {
+            bool blocked = true;
+            slot_type successor_class = NONE;
+        }
+    }
+}
+
+struct lock {
+    struct slot tail;
+    int reader_count;
+    struct slot next_writer;
+};
+
+within_2pl_acquire_phase(cown, curr_slot) {
+    if(curr_slot.is_read_only()) {
+        prev_slot = XCHG(cown->tail, curr_slot);
+        if(prev_slot == NULL) {
             cown->read_count++;
-        }
-        else {
-            cown->is_writer_at_head = true;
-        }
-        dec_dependency();
-    } else {
-        if(reader(curr_slot)) {
-            if(!cown->is_writer_at_head && !cown->writer_waiting) {
+            curr_slot->blocked = false;
+            dec_dependency(curr_slot);
+            acquire_cown();
+        } else {
+            if(prev_slot->class = WRITER || CAS(prev_slot->state, [true, NONE], [true, READER])) {
+                prev_slot->next = curr_slot;
+                repeat while blocked();
+            } else {
                 cown->read_count++;
-                dec_dependency();
+                prev_slot->next = curr_slot;
+                curr_slot->blocked = false;
+                dec_dependency(curr_slot);
+            }
+        }
+        if(curr_slot->successor_class = READER) {
+            repeat while curr_slot->next == NULL;
+            cown->read_count++; // Wakeup next reader and increment count for it.
+            curr_slot->next->blocked = false;
+            dec_dependency(curr_slot->next);
+        }
+    } else {
+        prev_slot = XCHG(cown->tail, curr_slot);
+        if(prev_slot == NULL) {
+            cown->next_writer = curr_slot;
+            if(cown->reader_count == 0 && XCHG(cown->next_writer, NULL) == curr_slot) {
+                blocked = false;
+                dec_dependency(curr_slot);
+                acquire_cown();
             }
         } else {
-            cown->writer_waiting = true;
+            prev_slot->successor_class = WRITER;
+            prev_slot->next = curr_slot;
         }
-        prev_slot->next = curr_slot;
+        repeat while blocked();
     }
 }
 ```
@@ -33,55 +74,45 @@ within_2pl_acquire_phase(cown, curr_slot) {
 
 ```c
 within_release_slot(curr_slot) {
-    if(curr_slot->no_writer_waiting) {
-        cown->read_count--;
-        return;
-    }
-    if(reader(curr_slot)) {
-        cown->read_count--;
-        if(cown->read_count == 0) {
-            cown->is_writer_at_head = true;
-            wakeup_next_behaviour(curr_slot);
+    if(curr_slot.type == READER) {
+        if(curr_slot.next == NULL) {
+            if(CAS(cown->tail, curr_slot, NULL) == curr_slot) {
+                if(atomic_dec(cown->read_count) == 0) {
+                    // Last reader
+                    w = XCHG(cown->next_writer, NULL);
+                    if(w != NULL) {
+                        w->blocked = false;
+                        dec_dependency(w);
+                    } else
+                        release_cown();
+                }
+                return;
+            }
+            repeat while curr_slot.next() == NULL;
+        }    
+        if(curr_slot.successor_class == WRITER)
+            cown.next_writer = curr_slot.next;
+        if(atomic_dec(cown->read_count) == 0) {
+            // Last reader
+            w = XCHG(cown->next_writer, NULL);
+            if(w != NULL) {
+                w->blocked = false;
+                dec_dependency(w);
+            } else
+                release_cown();
         }
     } else {
-        if(!reader(curr_slot->next)) {
-            cown->is_writer_at_head = true;
-            wakeup_next_behaviour(curr_slot);
-        } else {
-            cown->is_writer_at_head = false;
-            vector pending_readers;
-            next_slot = this;
-            writer_slot = nullptr;
-
-            while(true) {
-                if(next_slot->is_ready()) {
-                    if (CAS(cown->last_slot, next_slot, NULL) == next_slot) {
-                        writer_slot = nullptr;
-                        next_slot->no_writer_waiting = true;
-                        cown->writer_waiting = false;
-                        break;
-                    }
-                    assert(false); // TODO: Fix this to address case when the queue is extended while being traversed.
-                    while (next_slot->is_ready());
-                    break;
-                }
-                
-                assert(next_slot->is_behaviour());
-                if(next_slot->next->is_read_only())
-                    pending_readers.push_back(next_slot);
-                else {
-                    writer_slot = next_slot;
-                    break;
-                }
-                next_slot = next_slot->next;
+        if(curr_slot.next == NULL) {
+            if(CAS(cown->tail, curr_slot, NULL) == curr_slot) {
+                release_cown();
+                return;
             }
-
-            for(auto reader: pending_readers) {
-                cown->read_ref_count.add_read();
-                wakeup_next_behaviour(reader);
-                reader->next = writer_slot;
-            }
+            repeat while curr_slot.next() == NULL;
         }
+        if(curr_slot.next.class == READER)
+            cown->read_count++;
+        curr_slot.next.blocked = false;
+        dec_dependency(curr_slot.next);
     }
 }
 ```
