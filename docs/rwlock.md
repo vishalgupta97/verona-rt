@@ -16,7 +16,7 @@ struct slot {
         atomic_t state;
         struct {
             bool blocked = true;
-            slot_type successor_class = NONE;
+            slot_type next_slot_type = NONE;
         }
     }
 }
@@ -28,44 +28,41 @@ struct lock {
 };
 
 within_2pl_acquire_phase(cown, curr_slot) {
-    if(curr_slot.is_read_only()) {
-        prev_slot = XCHG(cown->tail, curr_slot);
+    auto curr_slot = last_slot;
+    curr_slot->set_behaviour(first_body);
+
+    if(curr_slot->is_read_only()) {
+        prev_slot = XCHG(cown->last_slot, curr_slot);
         if(prev_slot == NULL) {
-            cown->read_count++;
+            cown->read_ref_count.atomic_inc();
             curr_slot->blocked = false;
             dec_dependency(curr_slot);
-            acquire_cown();
+            Cown::acquire(cown);
         } else {
-            if(prev_slot->class = WRITER || CAS(prev_slot->state, [true, NONE], [true, READER])) {
-                prev_slot->next = curr_slot;
-                repeat while blocked();
+            uint16_t state_true_none = STATE_TRUE_NONE; // [Blocked, type]
+            uint16_t state_true_reader = STATE_TRUE_READER; // [Blocked, type]
+            if(!prev_slot->is_read_only() || CAS(prev_slot->state, state_true_none, state_true_reader)) {
+                prev_slot->set_next_slot(curr_slot); 
             } else {
-                cown->read_count++;
-                prev_slot->next = curr_slot;
+                cown->read_ref_count.atomic_inc();
+                prev_slot->set_next_slot(curr_slot); 
                 curr_slot->blocked = false;
                 dec_dependency(curr_slot);
             }
         }
-        if(curr_slot->successor_class = READER) {
-            repeat while curr_slot->next == NULL;
-            cown->read_count++; // Wakeup next reader and increment count for it.
-            curr_slot->next->blocked = false;
-            dec_dependency(curr_slot->next);
-        }
     } else {
-        prev_slot = XCHG(cown->tail, curr_slot);
+        prev_slot = XCHG(cown->last_slot, curr_slot);
         if(prev_slot == NULL) {
             cown->next_writer = curr_slot;
-            if(cown->reader_count == 0 && XCHG(cown->next_writer, NULL) == curr_slot) {
-                blocked = false;
+            if(cown->read_ref_count == 0 && XCHG(cown->next_writer, nullptr) == curr_slot) {
+                curr_slot->blocked = false;
                 dec_dependency(curr_slot);
-                acquire_cown();
+                Cown::acquire(cown);
             }
         } else {
-            prev_slot->successor_class = WRITER;
-            prev_slot->next = curr_slot;
+            prev_slot->set_next_slot_writer();
+            prev_slot->set_next_slot(curr_slot);
         }
-        repeat while blocked();
     }
 }
 ```
@@ -74,45 +71,75 @@ within_2pl_acquire_phase(cown, curr_slot) {
 
 ```c
 within_release_slot(curr_slot) {
-    if(curr_slot.type == READER) {
-        if(curr_slot.next == NULL) {
-            if(CAS(cown->tail, curr_slot, NULL) == curr_slot) {
-                if(atomic_dec(cown->read_count) == 0) {
+
+    if(curr_slot->is_read_only()) {
+        if(curr_slot->next_slot == NULL) {
+            if(CAS(cown->last_slot, curr_slot, NULL)) {
+                if(cown->read_ref_count.release_read()) {
                     // Last reader
-                    w = XCHG(cown->next_writer, NULL);
-                    if(w != NULL) {
-                        w->blocked = false;
-                        dec_dependency(w);
-                    } else
-                        release_cown();
+                    auto w = XCHG(cown->next_writer, NULL);
+                    if(w != nullptr) {
+                    w->blocked = false;
+                    while (w->is_ready());
+                    w->get_behaviour()->resolve();
+                    }
+                    // Release cown as this will be set by the new thread joining the queue.
+                    shared::release(ThreadAlloc::get(), cown);
                 }
                 return;
             }
-            repeat while curr_slot.next() == NULL;
-        }    
-        if(curr_slot.successor_class == WRITER)
-            cown.next_writer = curr_slot.next;
-        if(atomic_dec(cown->read_count) == 0) {
+            // If we failed, then the another thread is extending the chain
+            while (curr_slot->next_slot == NULL);
+        }
+
+        if(curr_slot->is_next_slot_writer()) 
+            cown->next_writer = next_slot;
+
+        if(cown->read_ref_count.release_read()) {
             // Last reader
-            w = XCHG(cown->next_writer, NULL);
-            if(w != NULL) {
+            auto w = cown->next_writer;
+            if(w != NULL && cown->read_ref_count == 0 && CAS(cown->next_writer, w, NULL)) {
                 w->blocked = false;
+                while(w->is_ready());
                 dec_dependency(w);
-            } else
-                release_cown();
+            } else {
+                shared::release(ThreadAlloc::get(), cown);
+            }
         }
     } else {
-        if(curr_slot.next == NULL) {
-            if(CAS(cown->tail, curr_slot, NULL) == curr_slot) {
-                release_cown();
+        if(curr_slot->next_slot == NULL) {
+            if(CAS(cown->last_slot, curr_slot, NULL)) {
+                shared::release(ThreadAlloc::get(), cown);
                 return;
             }
-            repeat while curr_slot.next() == NULL;
+            // If we failed, then the another thread is extending the chain
+            while (curr_slot->next_slot == nullptr);
         }
-        if(curr_slot.next.class == READER)
-            cown->read_count++;
-        curr_slot.next.blocked = false;
-        dec_dependency(curr_slot.next);
+
+        std::vector<Slot*> next_pending_readers;
+        if(curr_slot->next_slot->is_read_only()) {
+            cown->read_ref_count.atomic_inc();
+            next_pending_readers.push_back(next_slot);
+
+            auto curr_slot = next_slot;
+            while(curr_slot->is_next_slot_read_only()) {
+                while (curr_slot->next_slot == NULL); 
+                cown->read_ref_count.add_read();
+                next_pending_readers.push_back(curr_slot->next_slot);
+                curr_slot = curr_slot->next_slot;
+            }
+
+            for(auto reader: next_pending_readers) {
+                reader->blocked = false;
+                while(reader->is_ready()); 
+                dec_dependency(reader);
+            }
+
+        } else {
+            curr_slot->next_slot->blocked = false;
+            while(curr_slot->next_slot->is_ready()); 
+            dec_dependency(curr_slot->next_slot)
+        }
     }
 }
 ```
