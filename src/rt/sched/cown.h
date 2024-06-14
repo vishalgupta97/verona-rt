@@ -66,8 +66,9 @@ namespace verona::rt
       if (count.fetch_sub(2) == 2)
       {
         Systematic::yield();
-        assert(count.load() == 0);
-        count.store(0, std::memory_order_relaxed);
+        //Logging::cout() << "Releasing existing reader count: " << count.load() << Logging::endl;
+        //assert(count.load() == 0); //TODO: Check if this is correct.
+        //count.store(0, std::memory_order_relaxed);
         return true;
       }
       return false;

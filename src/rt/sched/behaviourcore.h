@@ -743,12 +743,13 @@ namespace verona::rt
               }
               assert(w->is_behaviour());
               w->get_behaviour()->resolve();
-            } else {
-              Logging::cout() << this << " No more work for cown " << 
+            }
+
+            // Release cown as this will be set by the new thread joining the queue.
+            Logging::cout() << this << " No more work for cown " << 
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                             << " behaviour " << get_behaviour() << Logging::endl;
               shared::release(ThreadAlloc::get(), cown);
-            }
           }
           return;
         }

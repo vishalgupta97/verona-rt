@@ -47,10 +47,14 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
                             break;
                         }
                     }
-                    if(found)
-                        (*stats)[0].fetch_add(1);
-                    else
-                        (*stats)[1].fetch_add(1);
+                    if(found) {
+                        Logging::cout() << "Key for read found " << key << Logging::endl;
+                        //(*stats)[0].fetch_add(1);
+                    }
+                    else {
+                        Logging::cout() << "Key for read not found " << key << Logging::endl;
+                        //(*stats)[1].fetch_add(1);
+                    }
                 };
             } else {
                 when((*buckets)[idx]) << [key, stats] (acquired_cown<Bucket> bucket) {
@@ -61,10 +65,14 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
                             break;
                         }
                     }
-                    if(found)
-                        (*stats)[2].fetch_add(1);
-                    else
-                        (*stats)[3].fetch_add(1);
+                    if(found) {
+                        Logging::cout() << "Key for write found " << key << Logging::endl;
+                        //(*stats)[2].fetch_add(1);
+                    }
+                    else {
+                        Logging::cout() << "Key for write not found " << key << Logging::endl;
+                        //(*stats)[3].fetch_add(1);
+                    }
                 };
             }
             Logging::cout() << "Index added: " << i << Logging::endl; 
