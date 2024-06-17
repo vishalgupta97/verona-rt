@@ -22,7 +22,7 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
 {
     size_t num_buckets = 128;
     size_t num_entries_per_bucket = 4;
-    size_t num_operations = 1000;
+    size_t num_operations = 10000000;
     size_t rw_ratio = 90; // X% readers
     
     std::shared_ptr<std::vector<cown_ptr<Bucket>>> buckets = std::make_shared<std::vector<cown_ptr<Bucket>>>();
@@ -49,11 +49,11 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
                     }
                     if(found) {
                         Logging::cout() << "Key for read found " << key << Logging::endl;
-                        //(*stats)[0].fetch_add(1);
+                        (*stats)[0].fetch_add(1);
                     }
                     else {
                         Logging::cout() << "Key for read not found " << key << Logging::endl;
-                        //(*stats)[1].fetch_add(1);
+                        (*stats)[1].fetch_add(1);
                     }
                 };
             } else {
@@ -67,11 +67,11 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
                     }
                     if(found) {
                         Logging::cout() << "Key for write found " << key << Logging::endl;
-                        //(*stats)[2].fetch_add(1);
+                        (*stats)[2].fetch_add(1);
                     }
                     else {
                         Logging::cout() << "Key for write not found " << key << Logging::endl;
-                        //(*stats)[3].fetch_add(1);
+                        (*stats)[3].fetch_add(1);
                     }
                 };
             }
@@ -90,10 +90,10 @@ int main(int argc, char** argv)
   auto t2 = high_resolution_clock::now();
 
   for(int i = 0; i < 4; i++)
-    Logging::cout() << i << " " << (*stats)[i].load() << Logging::endl;
+    std::cout << i << " " << (*stats)[i].load() << std::endl;
 
   auto ns_int = duration_cast<nanoseconds>(t2 - t1);
   auto us_int = duration_cast<microseconds>(t2 - t1);
   auto ms_int = duration_cast<milliseconds>(t2 - t1);
-  Logging::cout() << "Elapsed time: " << ms_int.count() << "ms " <<  us_int.count() << "us " << ns_int.count() << "ns" << Logging::endl;
+  std::cout << "Elapsed time: " << ms_int.count() << "ms " <<  us_int.count() << "us " << ns_int.count() << "ns" << std::endl;
 }
