@@ -584,25 +584,30 @@ namespace verona::rt
                               << " prev slot next read only " << prev_slot->is_next_slot_read_only() << Logging::endl;
               yield();
               prev_slot->set_next_slot(curr_slot); 
-              yield();
               Logging::cout() << curr_slot << " Reader Set next of previous slot cown " << cown
                               << " prev slot " << prev_slot 
                               << " behaviour " << first_body << Logging::endl;
+              yield();
               continue;
             } else {
               yield();
-              cown->read_ref_count.add_read();
+              bool first_reader = cown->read_ref_count.add_read();
               Logging::cout() << curr_slot << " Reader got the cown " << 
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                             << " behaviour " << first_body << Logging::endl;
               yield();
               prev_slot->set_next_slot(curr_slot); 
-              yield();
               Logging::cout() << curr_slot << " Reader Set next of previous slot cown " << cown
                               << " prev slot " << prev_slot 
                               << " behaviour " << first_body << Logging::endl;
+              yield();
               curr_slot->blocked = false;
               ec[std::get<0>(indexes[first_chain_index])]++;
+              if(first_reader) {
+                Logging::cout()
+                  << "Acquiring reference count for first reader on cown " << cown << Logging::endl;
+                Cown::acquire(cown);
+              }
               continue;
             }
           }
@@ -808,12 +813,12 @@ namespace verona::rt
           }
           assert(w->is_behaviour());
           w->get_behaviour()->resolve();
-        } else {
-          Logging::cout() << this << " No more work for cown " << 
+        }
+
+          Logging::cout() << this << " Last reader releasing cown " << 
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
               << " behaviour " << get_behaviour() << Logging::endl;
           shared::release(ThreadAlloc::get(), cown);
-        }
       }
     } else {
       if(next_slot == NULL) {
@@ -836,11 +841,17 @@ namespace verona::rt
 
       std::vector<Slot*> next_pending_readers;
       if(next_slot->is_read_only()) {
-        cown->read_ref_count.add_read();
+        bool first_reader = cown->read_ref_count.add_read();
+        yield();
+        next_slot->blocked = false;
         Logging::cout() << this << " Writer waking up next reader cown " << 
         cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                           << " next slot " << next_slot 
                             << " behaviour " << get_behaviour() << Logging::endl;
+        assert(first_reader);
+        Logging::cout()
+                << "Acquiring reference count for first reader on cown " << cown << Logging::endl;
+        Cown::acquire(cown);
         next_pending_readers.push_back(next_slot);
 
         auto curr_slot = next_slot;
@@ -851,6 +862,8 @@ namespace verona::rt
             Aal::pause();
           }
           cown->read_ref_count.add_read();
+          yield();
+          curr_slot->next_slot->blocked = false;
           Logging::cout() << next_slot << " Reader waking up next reader cown " << 
           cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                           << " Next slot " << curr_slot->next_slot
@@ -860,8 +873,6 @@ namespace verona::rt
         }
 
         for(auto reader: next_pending_readers) {
-          yield();
-          reader->blocked = false;
           yield();
           if(reader->is_ready()) {
             yield();
