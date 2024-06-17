@@ -49,10 +49,11 @@ namespace verona::rt
   {
     std::atomic<size_t> count{0};
 
-    void add_read()
+    // true means first reader is added, false otherwise
+    bool add_read()
     {
-       Logging::cout() << "Adding new reader" << Logging::endl;
-      count.fetch_add(2);
+      Logging::cout() << "Adding new reader" << Logging::endl;
+      return count.fetch_add(2) == 0;
     }
 
     bool any_reader() {

@@ -530,7 +530,7 @@ namespace verona::rt
           yield();
           if(prev_slot == nullptr) {
             yield();
-            cown->read_ref_count.add_read();
+            bool first_reader = cown->read_ref_count.add_read();
             Logging::cout() << curr_slot << " Reader at head of queue and got the cown " << 
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                             << " behaviour " << first_body << Logging::endl;
@@ -540,7 +540,8 @@ namespace verona::rt
             yield();
             if (transfer_count)
             {
-              Logging::cout() << "Releasing transferred count " << transfer_count
+              Logging::cout() << "Releasing reader transferred count " << transfer_count
+                              << " -1 for first in queue cown " << cown
                               << Logging::endl;
               // Release transfer_count - 1 times, we needed one as we woke up the
               // cown, but the rest were not required.
@@ -550,10 +551,17 @@ namespace verona::rt
             else
             {
               Logging::cout()
-                << "Acquiring reference count on cown " << cown << Logging::endl;
+                << "Acquiring reader reference count for first in queue on cown " << cown << Logging::endl;
               // We didn't have any RCs passed in, so we need to acquire one.
               Cown::acquire(cown);
             }
+
+            if(first_reader) {
+              Logging::cout()
+                << "Acquiring reference count for first reader on cown " << cown << Logging::endl;
+              Cown::acquire(cown);
+            }
+
             continue;
           } else {
             uint16_t state_true_none = STATE_TRUE_NONE;
@@ -582,11 +590,11 @@ namespace verona::rt
                               << " behaviour " << first_body << Logging::endl;
               continue;
             } else {
+              yield();
+              cown->read_ref_count.add_read();
               Logging::cout() << curr_slot << " Reader got the cown " << 
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                             << " behaviour " << first_body << Logging::endl;
-              yield();
-              cown->read_ref_count.add_read();
               yield();
               prev_slot->set_next_slot(curr_slot); 
               yield();
@@ -604,6 +612,24 @@ namespace verona::rt
           if(prev_slot == nullptr) {
             cown->next_writer = curr_slot;
             yield();
+            if (transfer_count)
+            {
+              Logging::cout() << "Releasing writer transferred count " << transfer_count
+                              << " -1 for first in queue cown " << cown
+                              << Logging::endl;
+              // Release transfer_count - 1 times, we needed one as we woke up the
+              // cown, but the rest were not required.
+              for (int j = 0; j < transfer_count - 1; j++)
+                Cown::release(ThreadAlloc::get(), cown);
+            }
+            else
+            {
+              Logging::cout()
+                << "Acquiring writer reference count on cown " << cown << Logging::endl;
+              // We didn't have any RCs passed in, so we need to acquire one.
+              Cown::acquire(cown);
+            }
+
             if(!cown->read_ref_count.any_reader() && cown->next_writer.exchange(nullptr, std::memory_order_acq_rel) == curr_slot) {
               yield();
               Logging::cout() << curr_slot << " Writer at head of queue and got the cown " << 
@@ -612,22 +638,6 @@ namespace verona::rt
               curr_slot->blocked = false;
               ec[std::get<0>(indexes[first_chain_index])]++;
               yield();
-              if (transfer_count)
-              {
-                Logging::cout() << "Releasing transferred count " << transfer_count
-                                << Logging::endl;
-                // Release transfer_count - 1 times, we needed one as we woke up the
-                // cown, but the rest were not required.
-                for (int j = 0; j < transfer_count - 1; j++)
-                  Cown::release(ThreadAlloc::get(), cown);
-              }
-              else
-              {
-                Logging::cout()
-                  << "Acquiring reference count on cown " << cown << Logging::endl;
-                // We didn't have any RCs passed in, so we need to acquire one.
-                Cown::acquire(cown);
-              }
               continue;  
             }
             Logging::cout() << curr_slot << " Writer waiting for previous reader cown " << 
@@ -744,13 +754,20 @@ namespace verona::rt
               assert(w->is_behaviour());
               w->get_behaviour()->resolve();
             }
+            yield();
 
             // Release cown as this will be set by the new thread joining the queue.
-            Logging::cout() << this << " No more work for cown " << 
+            Logging::cout() << this << " CAS success No more work for cown " << 
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                             << " behaviour " << get_behaviour() << Logging::endl;
               shared::release(ThreadAlloc::get(), cown);
           }
+          yield();
+          // Release cown as this will be set by the new thread joining the queue.
+            Logging::cout() << this << " Last reader No more work for cown " << 
+ cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
+                            << " behaviour " << get_behaviour() << Logging::endl;
+              shared::release(ThreadAlloc::get(), cown);
           return;
         }
         Logging::cout() << this << " Reader another thread extending the chain cown " << 
@@ -767,8 +784,13 @@ namespace verona::rt
       if(is_next_slot_writer()) 
         cown->next_writer = next_slot;
 
+      Logging::cout() << this << " Reader releasing the cown " << 
+      cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
+                            << " behaviour " << get_behaviour() << Logging::endl;
+
       if(cown->read_ref_count.release_read()) {
         // Last reader
+        yield();
         auto w = cown->next_writer.load();
         if(w != nullptr && !cown->read_ref_count.any_reader() && cown->next_writer.compare_exchange_strong(w, nullptr, std::memory_order_acq_rel)) {
           Logging::cout() << this << " Last Reader waking up next writer cown " << 
@@ -797,6 +819,7 @@ namespace verona::rt
       if(next_slot == NULL) {
         auto slot_addr = this;
         if(cown->last_slot.compare_exchange_strong(slot_addr, nullptr, std::memory_order_acq_rel)) {
+          yield();
           Logging::cout() << this << " No more work Last writer releasing the cown " << 
  cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                             << " behaviour " << get_behaviour() << Logging::endl;

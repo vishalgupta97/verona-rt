@@ -20,7 +20,7 @@ class Bucket
 
 void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
 {
-    size_t num_buckets = 128;
+    size_t num_buckets = 2;
     size_t num_entries_per_bucket = 4;
     size_t num_operations = 1000;
     size_t rw_ratio = 90; // X% readers
