@@ -20,9 +20,10 @@ class Bucket
 
 void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
 {
+    auto t1 = high_resolution_clock::now();
     size_t num_buckets = 128;
     size_t num_entries_per_bucket = 4;
-    size_t num_operations = 10000000;
+    size_t num_operations = 100000000;
     size_t rw_ratio = 90; // X% readers
     
     std::shared_ptr<std::vector<cown_ptr<Bucket>>> buckets = std::make_shared<std::vector<cown_ptr<Bucket>>>();
@@ -35,47 +36,52 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>,4>> stats)
     }
 
     for(size_t i = 0; i < num_operations; i++) {
-        size_t key = rand() % (num_buckets * num_entries_per_bucket * 2);
-        size_t idx = key % num_buckets;
+        volatile size_t key = rand() % (num_buckets * num_entries_per_bucket * 2);
+        volatile size_t idx = key % num_buckets;
         if(rand() % 100 < rw_ratio) {
             when(read((*buckets)[idx])) << [key, stats] (acquired_cown<const Bucket> bucket) {
-                bool found = false;
+                volatile bool found = false;
                 for(auto it: bucket->list) {
                     if(it == key) {
                         found = true;
                         break;
                     }
                 }
-                if(found) {
-                    Logging::cout() << "Key for read found " << key << Logging::endl;
-                    (*stats)[0].fetch_add(1);
-                }
-                /*else {
-                    Logging::cout() << "Key for read not found " << key << Logging::endl;
-                    (*stats)[1].fetch_add(1);
-                }*/
+                // if(found) {
+                //     //Logging::cout() << "Key for read found " << key << Logging::endl; 
+                //     (*stats)[0].fetch_add(1);
+                // }
+                // else {
+                //     //Logging::cout() << "Key for read not found " << key << Logging::endl;
+                //     (*stats)[1].fetch_add(1);
+                // }
             };
         } else {
             when((*buckets)[idx]) << [key, stats] (acquired_cown<Bucket> bucket) {
-                bool found = false;
+                volatile bool found = false;
                 for(auto it: bucket->list) {
                     if(it == key) {
                         found = true;
                         break;
                     }
                 }
-                if(found) {
-                    Logging::cout() << "Key for write found " << key << Logging::endl;
-                    (*stats)[2].fetch_add(1);
-                }
-                /*else {
-                    Logging::cout() << "Key for write not found " << key << Logging::endl;
-                    (*stats)[3].fetch_add(1);
-                }*/
+                // if(found) {
+                //     //Logging::cout() << "Key for write found " << key << Logging::endl;
+                //     (*stats)[2].fetch_add(1);
+                // }
+                // else {
+                //     //Logging::cout() << "Key for write not found " << key << Logging::endl;
+                //     (*stats)[3].fetch_add(1);
+                // }
             };
         }
         Logging::cout() << "Index added: " << i << Logging::endl; 
     }
+    auto t2 = high_resolution_clock::now();
+    auto ns_int = duration_cast<nanoseconds>(t2 - t1);
+    auto us_int = duration_cast<microseconds>(t2 - t1);
+    auto ms_int = duration_cast<milliseconds>(t2 - t1);
+    std::cout << "Behaviour generation Elapsed time: " << ms_int.count() << "ms " <<  us_int.count() << "us " << ns_int.count() << "ns" << std::endl;
 }
 
 int main(int argc, char** argv)
