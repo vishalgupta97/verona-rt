@@ -34,30 +34,34 @@ within_2pl_acquire_phase(cown, curr_slot) {
     if(curr_slot->is_read_only()) {
         prev_slot = XCHG(cown->last_slot, curr_slot);
         if(prev_slot == NULL) {
-            cown->read_ref_count.atomic_inc();
+            first_reader = cown->read_ref_count.atomic_inc();
             curr_slot->blocked = false;
             dec_dependency(curr_slot);
             Cown::acquire(cown);
+            if(first_reader)
+                Cown::acquire(cown);
         } else {
             uint16_t state_true_none = STATE_TRUE_NONE; // [Blocked, type]
             uint16_t state_true_reader = STATE_TRUE_READER; // [Blocked, type]
             if(!prev_slot->is_read_only() || CAS(prev_slot->state, state_true_none, state_true_reader)) {
                 prev_slot->set_next_slot(curr_slot); 
             } else {
-                cown->read_ref_count.atomic_inc();
+                first_reader = cown->read_ref_count.atomic_inc();
                 prev_slot->set_next_slot(curr_slot); 
                 curr_slot->blocked = false;
                 dec_dependency(curr_slot);
+                if(first_reader)
+                    Cown::acquire(cown);
             }
         }
     } else {
         prev_slot = XCHG(cown->last_slot, curr_slot);
         if(prev_slot == NULL) {
             cown->next_writer = curr_slot;
+            Cown::acquire(cown);
             if(cown->read_ref_count == 0 && XCHG(cown->next_writer, nullptr) == curr_slot) {
                 curr_slot->blocked = false;
                 dec_dependency(curr_slot);
-                Cown::acquire(cown);
             }
         } else {
             prev_slot->set_next_slot_writer();
@@ -79,13 +83,14 @@ within_release_slot(curr_slot) {
                     // Last reader
                     auto w = XCHG(cown->next_writer, NULL);
                     if(w != nullptr) {
-                    w->blocked = false;
-                    while (w->is_ready());
-                    w->get_behaviour()->resolve();
+                        w->blocked = false;
+                        while (w->is_ready());
+                        w->get_behaviour()->resolve();
                     }
                     // Release cown as this will be set by the new thread joining the queue.
-                    shared::release(ThreadAlloc::get(), cown);
+                    Cown::release(cown);
                 }
+                Cown::release(cown);
                 return;
             }
             // If we failed, then the another thread is extending the chain
