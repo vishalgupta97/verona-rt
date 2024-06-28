@@ -56,6 +56,13 @@ namespace verona::rt
       return count.fetch_add(2) == 0;
     }
 
+    // true means first reader is added, false otherwise
+    bool add_read(int readers)
+    {
+      Logging::cout() << "Adding new reader" << Logging::endl;
+      return count.fetch_add(readers * 2) == 0;
+    }
+
     bool any_reader() {
       return (count.load(std::memory_order_acquire) != 0);
     }

@@ -839,8 +839,11 @@ namespace verona::rt
         }
       }
 
-      std::vector<Slot*> next_pending_readers;
       if(next_slot->is_read_only()) {
+        //std::vector<Slot*> next_pending_readers;
+        //next_pending_readers.reserve(200);
+        std::array<Slot*,200> next_pending_readers; //TODO: Fix this 
+        int index = 0;
         bool first_reader = cown->read_ref_count.add_read();
         yield();
         next_slot->blocked = false;
@@ -852,7 +855,7 @@ namespace verona::rt
         Logging::cout()
                 << "Acquiring reference count for first reader on cown " << cown << Logging::endl;
         Cown::acquire(cown);
-        next_pending_readers.push_back(next_slot);
+        next_pending_readers[index++] = next_slot;
 
         auto curr_slot = next_slot;
         while(curr_slot->is_next_slot_read_only()) {
@@ -861,18 +864,30 @@ namespace verona::rt
             Systematic::yield_until([curr_slot]() { return (curr_slot->next_slot != nullptr); });
             Aal::pause();
           }
-          cown->read_ref_count.add_read();
           yield();
           curr_slot->next_slot->blocked = false;
           Logging::cout() << next_slot << " Reader waking up next reader cown " << 
           cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                           << " Next slot " << curr_slot->next_slot
                           << " behaviour " << curr_slot->next_slot->get_behaviour() << Logging::endl;
-          next_pending_readers.push_back(curr_slot->next_slot);
+          next_pending_readers[index++] = curr_slot->next_slot;
+          assert(index < 200);
           curr_slot = curr_slot->next_slot;
         }
 
-        for(auto reader: next_pending_readers) {
+        cown->read_ref_count.add_read(index - 1);
+
+
+        // static thread_local long max_next_pending_readers = 0;
+
+        // if(max_next_pending_readers < next_pending_readers.size()) {
+        //   max_next_pending_readers = next_pending_readers.size();
+        //   printf("Pending readers size: %ld\n", max_next_pending_readers);
+        // }
+
+        //for(auto reader: next_pending_readers) {
+        for(int i = 0; i < index; i++) {
+          auto reader = next_pending_readers[i];
           yield();
           if(reader->is_ready()) {
             yield();
