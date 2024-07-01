@@ -84,6 +84,8 @@ public:
   size_t seed_upper;
   high_resolution_clock::time_point start;
 
+  void (*endf)(void) = nullptr;
+
   SystematicTestHarness(int argc, const char* const* argv) : opt(argc, argv)
   {
     std::cout << "Harness starting." << std::endl;
@@ -155,7 +157,11 @@ public:
 #else
       UNUSED(seed);
 #endif
-      sched.init(cores);
+
+      if (endf)
+        sched.init(cores, endf);
+      else      
+        sched.init(cores);
 
       f(std::forward<Args>(args)...);
 

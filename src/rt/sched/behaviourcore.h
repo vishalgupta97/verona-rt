@@ -842,7 +842,7 @@ namespace verona::rt
       if(next_slot->is_read_only()) {
         //std::vector<Slot*> next_pending_readers;
         //next_pending_readers.reserve(200);
-        std::array<Slot*,200> next_pending_readers; //TODO: Fix this 
+        std::array<Slot*,500> next_pending_readers; //TODO: Fix this 
         int index = 0;
         bool first_reader = cown->read_ref_count.add_read();
         yield();
@@ -871,17 +871,16 @@ namespace verona::rt
                           << " Next slot " << curr_slot->next_slot
                           << " behaviour " << curr_slot->next_slot->get_behaviour() << Logging::endl;
           next_pending_readers[index++] = curr_slot->next_slot;
-          assert(index < 200);
+          assert(index < 500);
           curr_slot = curr_slot->next_slot;
         }
 
         cown->read_ref_count.add_read(index - 1);
 
-
         // static thread_local long max_next_pending_readers = 0;
 
-        // if(max_next_pending_readers < next_pending_readers.size()) {
-        //   max_next_pending_readers = next_pending_readers.size();
+        // if(max_next_pending_readers < index) {
+        //   max_next_pending_readers = index;
         //   printf("Pending readers size: %ld\n", max_next_pending_readers);
         // }
 

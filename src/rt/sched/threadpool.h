@@ -229,6 +229,38 @@ namespace verona::rt
       init_barrier();
     }
 
+    template<typename EndF>
+    void init(size_t count, EndF endf)
+    {
+      Logging::cout() << "Init runtime" << Logging::endl;
+
+      if ((thread_count != 0) || (count == 0))
+        abort();
+
+      thread_count = count;
+      teardown_in_progress = false;
+
+      // Initialize the corepool.
+      core_pool.init(count);
+
+      // For future ids.
+      systematic_ids = count + 1;
+
+      for (; count > 0; count--)
+      {
+        T* t = new T;
+        t->systematic_id = count;
+        t->endf = endf;
+#ifdef USE_SYSTEMATIC_TESTING
+        t->local_systematic =
+          Systematic::create_systematic_thread(t->systematic_id);
+#endif
+        threads.add_free(t);
+      }
+      Logging::cout() << "Runtime initialised" << Logging::endl;
+      init_barrier();
+    }
+
     void run()
     {
       run_with_startup<>(&nop);
