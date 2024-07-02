@@ -9,5 +9,5 @@ mkdir -p ${out_dir}
 for c in ${cores[@]}
 do
 	out_file=$out_dir/hashtable.$c
-    	$binary -c $c | tee $out_file
+    	$binary --cores $c --allow_leaks | tee $out_file
 done
