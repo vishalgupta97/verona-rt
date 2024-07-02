@@ -38,11 +38,15 @@ thread_local long found_read_ops = 0;
 thread_local long not_found_read_ops = 0;
 thread_local long found_write_ops = 0;
 thread_local long not_found_write_ops = 0;
+thread_local long read_cs_time = 0;
+thread_local long write_cs_time = 0;
 
 std::atomic<long> total_found_read_ops = 0;
 std::atomic<long> total_not_found_read_ops = 0;
 std::atomic<long> total_found_write_ops = 0;
 std::atomic<long> total_not_found_write_ops = 0;
+std::atomic<long> total_read_cs_time = 0;
+std::atomic<long> total_write_cs_time = 0;
 
 void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS * 2>> stats)
 {
@@ -76,6 +80,8 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS
                 }
 #endif
 
+                auto t1 = high_resolution_clock::now();
+
                 bool found = false;
                 for(auto it: bucket->list) {
                     if(it->val == key) {
@@ -84,10 +90,17 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS
                     }
                 }
 
+                for(volatile int i = 0; i < 100; i++)
+                    Aal::pause();
+
                 if(found)
                     found_read_ops++;
                 else
                     not_found_read_ops++;
+                
+                auto t2 = high_resolution_clock::now();
+
+                read_cs_time += duration_cast<nanoseconds>(t2 - t1).count();                
 #if DEBUG_RW
                 (*stats)[idx].fetch_sub(2);
 #endif
@@ -99,6 +112,8 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS
                 Logging::cout() << "Writer idx:" << idx << " val: " << val << Logging::endl;
                 check(val == 0);
 #endif
+                auto t1 = high_resolution_clock::now();
+
                 bool found = false;
                 for(auto it: bucket->list) {
                     if(it->val == key) {
@@ -107,10 +122,17 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS
                     }
                 }
 
+                for(volatile int i = 0; i < 100; i++)
+                    Aal::pause();
+
                 if(found)
                     found_write_ops++;
                 else
                     not_found_write_ops++;
+
+                auto t2 = high_resolution_clock::now();
+
+                write_cs_time += duration_cast<nanoseconds>(t2 - t1).count();
 #if DEBUG_RW
                 (*stats)[idx].fetch_sub(1);
 #endif
@@ -139,31 +161,37 @@ void finish(void) {
     total_not_found_read_ops.fetch_add(not_found_read_ops);
     total_found_write_ops.fetch_add(found_write_ops);
     total_not_found_write_ops.fetch_add(not_found_write_ops);
+
+    total_read_cs_time.fetch_add(read_cs_time);
+    total_write_cs_time.fetch_add(write_cs_time);
     std::cout << ss.str();
 }
 
 int main(int argc, char** argv)
 {
-  SystematicTestHarness harness(argc, argv);
-  auto stats = std::make_shared<std::array<std::atomic<size_t>, NUM_BUCKETS * 2>>();
-  
-  harness.endf = finish;
+    SystematicTestHarness harness(argc, argv);
+    auto stats = std::make_shared<std::array<std::atomic<size_t>, NUM_BUCKETS * 2>>();
+    
+    harness.endf = finish;
 
-  auto t1 = high_resolution_clock::now();
-  harness.run(test_hash_table, stats);
-  auto t2 = high_resolution_clock::now();
+    auto t1 = high_resolution_clock::now();
+    harness.run(test_hash_table, stats);
+    auto t2 = high_resolution_clock::now();
 
-  for(int i = 0; i < NUM_BUCKETS; i++)
-    assert((*stats)[i].load() == 0);
+    for(int i = 0; i < NUM_BUCKETS; i++)
+        assert((*stats)[i].load() == 0);
 
-  std::cout << "Total ops: " << (total_found_read_ops.load() + total_found_write_ops.load() + total_not_found_read_ops.load() + total_not_found_write_ops.load())
-                         << " found read ops: " << total_found_read_ops.load() 
-                         << " not found read ops: " << total_not_found_read_ops.load()
-                         << " found write ops: " << total_found_write_ops.load()
-                         << " not found write ops: " << total_not_found_write_ops.load() << std::endl;
+    std::cout << "Total ops: " << (total_found_read_ops.load() + total_found_write_ops.load() + total_not_found_read_ops.load() + total_not_found_write_ops.load())
+                            << " found read ops: " << total_found_read_ops.load() 
+                            << " not found read ops: " << total_not_found_read_ops.load()
+                            << " found write ops: " << total_found_write_ops.load()
+                            << " not found write ops: " << total_not_found_write_ops.load() << std::endl;
 
-  auto ns_int = duration_cast<nanoseconds>(t2 - t1);
-  auto us_int = duration_cast<microseconds>(t2 - t1);
-  auto ms_int = duration_cast<milliseconds>(t2 - t1);
-  std::cout << "Elapsed time: " << ms_int.count() << "ms " <<  us_int.count() << "us " << ns_int.count() << "ns" << std::endl;
+    std::cout << "Avg Read CS time: " << ((double)total_read_cs_time.load())/(total_found_read_ops.load() + total_not_found_read_ops.load()) << " ns" << std::endl;
+    std::cout << "Avg Write CS time: " << ((double)total_write_cs_time.load())/(total_found_write_ops.load() + total_not_found_write_ops.load()) << " ns" << std::endl;
+
+    auto ns_int = duration_cast<nanoseconds>(t2 - t1);
+    auto us_int = duration_cast<microseconds>(t2 - t1);
+    auto ms_int = duration_cast<milliseconds>(t2 - t1);
+    std::cout << "Elapsed time: " << ms_int.count() << "ms " <<  us_int.count() << "us " << ns_int.count() << "ns" << std::endl;
 }

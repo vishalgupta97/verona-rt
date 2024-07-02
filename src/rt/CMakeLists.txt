@@ -33,8 +33,8 @@ if(SANITIZER)
   target_link_libraries(verona_rt INTERFACE -fsanitize=${SANITIZER})
 endif()
 
-target_compile_options(verona_rt INTERFACE -g -fno-omit-frame-pointer)
-target_link_libraries(verona_rt INTERFACE  -g -fno-omit-frame-pointer)
+target_compile_options(verona_rt INTERFACE -g -fno-omit-frame-pointer) # -fno-inline)
+target_link_libraries(verona_rt INTERFACE  -g -fno-omit-frame-pointer) # -fno-inline)
 
 if(USE_SYSTEMATIC_TESTING)
   target_compile_definitions(verona_rt INTERFACE USE_SYSTEMATIC_TESTING)

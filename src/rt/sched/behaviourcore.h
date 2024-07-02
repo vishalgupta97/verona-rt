@@ -250,7 +250,7 @@ namespace verona::rt
      *
      * Returns true if this call makes the count_down_zero
      */
-    void resolve(size_t n = 1)
+    void resolve(size_t n = 1, bool fifo = true)
     {
       Logging::cout() << "Behaviour::resolve " << n << " for behaviour " << this
                       << Logging::endl;
@@ -260,7 +260,7 @@ namespace verona::rt
         (exec_count_down.load(std::memory_order_acquire) == n) ||
         (exec_count_down.fetch_sub(n) == n)) {
         Logging::cout() << "Scheduling Behaviour " << this << Logging::endl;
-        Scheduler::schedule(as_work());
+        Scheduler::schedule(as_work(), fifo);
         }
     }
 
@@ -897,7 +897,7 @@ namespace verona::rt
             }
           }
           assert(reader->is_behaviour());
-          reader->get_behaviour()->resolve();
+          reader->get_behaviour()->resolve(1, false);
         }
 
       } else {

@@ -236,20 +236,20 @@ namespace verona::rt
     {
       Work* work = nullptr;
       // Try to steal from the victim thread.
-      if (victim != core)
-      {
-        work = victim->q.dequeue(*alloc);
+      // if (victim != core)
+      // {
+      //   work = victim->q.dequeue(*alloc);
 
-        if (work != nullptr)
-        {
-          // stats.steal();
-          Logging::cout() << "Fast-steal work " << work << " from "
-                          << victim->affinity << Logging::endl;
-        }
-      }
+      //   if (work != nullptr)
+      //   {
+      //     core->stats.steal();
+      //     Logging::cout() << "Fast-steal work " << work << " from "
+      //                     << victim->affinity << Logging::endl;
+      //   }
+      // }
 
-      // Move to the next victim thread.
-      victim = victim->next;
+      // // Move to the next victim thread.
+      // victim = victim->next;
 
       return work;
     }
@@ -269,22 +269,22 @@ namespace verona::rt
         if (work != nullptr)
           return work;
 
-        // Try to steal from the victim thread.
-        if (victim != core)
-        {
-          work = victim->q.dequeue(*alloc);
+        // // Try to steal from the victim thread.
+        // if (victim != core)
+        // {
+        //   work = victim->q.dequeue(*alloc);
 
-          if (work != nullptr)
-          {
-            core->stats.steal();
-            Logging::cout() << "Stole work " << work << " from "
-                            << victim->affinity << Logging::endl;
-            return work;
-          }
-        }
+        //   if (work != nullptr)
+        //   {
+        //     core->stats.steal();
+        //     Logging::cout() << "Stole work " << work << " from "
+        //                     << victim->affinity << Logging::endl;
+        //     return work;
+        //   }
+        // }
 
-        // We were unable to steal, move to the next victim thread.
-        victim = victim->next;
+        // // We were unable to steal, move to the next victim thread.
+        // victim = victim->next;
 
 #ifdef USE_SYSTEMATIC_TESTING
         // Only try to pause with 1/(2^5) probability
