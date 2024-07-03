@@ -865,6 +865,7 @@ namespace verona::rt
             Aal::pause();
           }
           yield();
+          //cown->read_ref_count.add_read();
           curr_slot->next_slot->blocked = false;
           Logging::cout() << next_slot << " Reader waking up next reader cown " << 
           cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
@@ -873,6 +874,21 @@ namespace verona::rt
           next_pending_readers[index++] = curr_slot->next_slot;
           assert(index < 500);
           curr_slot = curr_slot->next_slot;
+
+          // next_slot = curr_slot->next_slot;
+          // yield();
+          // if(next_slot->is_ready()) { //TODO: Fix this, it will not work for some cases.
+          //   yield();
+          //   while (next_slot->is_ready())
+          //   {
+          //     Systematic::yield_until([curr_slot]() { return !(curr_slot->next_slot->is_ready()); });
+          //     Aal::pause();
+          //   }
+          // }
+          // assert(next_slot->is_behaviour());
+          // next_slot->get_behaviour()->resolve(1, false);
+
+          // curr_slot = next_slot;
         }
 
         cown->read_ref_count.add_read(index - 1);

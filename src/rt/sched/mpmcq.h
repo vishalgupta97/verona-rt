@@ -98,6 +98,19 @@ namespace verona::rt
       std::atomic_thread_fence(std::memory_order_seq_cst);
     }
 
+    void enqueue_range_front(T* node_start, T* node_end)
+    {
+      auto cmp = front.read();
+
+      do
+      {
+        node_end->next_in_queue.store(cmp.ptr(), std::memory_order_relaxed);
+      } while (!cmp.store_conditional(node_start));
+      // TODO: Add this into the ABA protection.
+      // Requires snmalloc PR to add store_conditional to take a memory_order.
+      std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
+
     /**
      * Take an element from the queue.
      * This may spuriosly fail and surrounding code should be prepared for that.
@@ -110,8 +123,8 @@ namespace verona::rt
       // Hold epoch to ensure that the value read from `front` cannot be
       // deallocated during this operation.  This must occur before read of
       // front.
-      Epoch e(alloc);
-      uint64_t epoch = e.get_local_epoch_epoch();
+      // Epoch e(alloc);
+      // uint64_t epoch = e.get_local_epoch_epoch();
 
       auto cmp = front.read();
       do
@@ -132,9 +145,9 @@ namespace verona::rt
           return nullptr;
       } while (!cmp.store_conditional(next));
 
-      assert(epoch != T::NO_EPOCH_SET);
+      // assert(epoch != T::NO_EPOCH_SET);
 
-      fnt->epoch_when_popped = epoch;
+      // fnt->epoch_when_popped = epoch;
 
       return fnt;
     }
