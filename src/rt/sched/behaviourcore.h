@@ -901,19 +901,56 @@ namespace verona::rt
         // }
 
         //for(auto reader: next_pending_readers) {
-        for(int i = 0; i < index; i++) {
-          auto reader = next_pending_readers[i];
-          yield();
-          if(reader->is_ready()) {
-            yield();
-            while (reader->is_ready())
-            {
-              Systematic::yield_until([reader]() { return !(reader->is_ready()); });
-              Aal::pause();
-            }
+
+        #define NUM_CORES 16 //TODO: Fix this to (number of thread - 1)
+
+        if(index >= NUM_CORES) {
+          std::array<Slot*,NUM_CORES> end_readers;
+          for(int i = 0; i < NUM_CORES; i++) {
+            end_readers[i] = next_pending_readers[i];
           }
-          assert(reader->is_behaviour());
-          reader->get_behaviour()->resolve(1, false);
+
+          for(int i = NUM_CORES; i < index; i++) {
+            auto reader = next_pending_readers[i];
+            auto prev_reader = next_pending_readers[i - NUM_CORES];
+            yield();
+            if(reader->is_ready()) {
+              yield();
+              while (reader->is_ready())
+              {
+                Systematic::yield_until([reader]() { return !(reader->is_ready()); });
+                Aal::pause();
+              }
+            }
+            assert(reader->is_behaviour());
+            assert(reader->get_behaviour()->exec_count_down.load(std::memory_order_acquire) == 1);
+
+            prev_reader->get_behaviour()->as_work()->next_in_queue = reader->get_behaviour()->as_work();
+            end_readers[i % NUM_CORES] = reader;
+          }
+
+          for(int i = 0; i < NUM_CORES; i++) {
+            if(next_pending_readers[i] != end_readers[i])
+              Scheduler::schedule_many(next_pending_readers[i]->get_behaviour()->as_work(), end_readers[i]->get_behaviour()->as_work());
+            else
+              Scheduler::schedule(next_pending_readers[i]->get_behaviour()->as_work(), false);
+          }
+        }
+        else {
+          for(int i = 0; i < index; i++) {
+            auto reader = next_pending_readers[i];
+            yield();
+            if(reader->is_ready()) {
+              yield();
+              while (reader->is_ready())
+              {
+                Systematic::yield_until([reader]() { return !(reader->is_ready()); });
+                Aal::pause();
+              }
+            }
+            assert(reader->is_behaviour());
+            reader->get_behaviour()->resolve(1, false);
+          }
         }
 
       } else {

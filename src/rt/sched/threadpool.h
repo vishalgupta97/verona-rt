@@ -199,6 +199,12 @@ namespace verona::rt
       T::schedule_lifo(core, w);
     }
 
+    static void schedule_many(Work* begin, Work* end)
+    {
+      auto* core = round_robin();
+      T::schedule_many_lifo(core, begin, end);
+    }
+
     void init(size_t count)
     {
       Logging::cout() << "Init runtime" << Logging::endl;

@@ -116,6 +116,16 @@ namespace verona::rt
         c->stats.unpause();
     }
 
+    static inline void schedule_many_lifo(Core* c, Work* begin, Work* end)
+    {
+      c->q.enqueue_range_front(begin, end);
+
+      c->stats.lifo_many();
+
+      if (Scheduler::get().unpause())
+        c->stats.unpause();
+    }
+
     template<typename... Args>
     static void run(SchedulerThread* t, void (*startup)(Args...), Args... args)
     {

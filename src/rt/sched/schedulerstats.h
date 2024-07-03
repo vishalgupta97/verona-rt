@@ -43,6 +43,7 @@ namespace verona::rt
     std::atomic<size_t> pause_count{0};
     std::atomic<size_t> unpause_count{0};
     std::atomic<size_t> lifo_count{0};
+    std::atomic<size_t> lifo_many_count{0};
     std::array<std::atomic<size_t>, 16> behaviour_count{};
     std::atomic<size_t> cown_count{0};
 #endif
@@ -91,6 +92,13 @@ namespace verona::rt
 #endif
     }
 
+    void lifo_many()
+    {
+#ifdef USE_SCHED_STATS
+      lifo_many_count++;
+#endif
+    }
+
     void behaviour(size_t cowns)
     {
       UNUSED(cowns);
@@ -118,6 +126,7 @@ namespace verona::rt
       pause_count += that.pause_count;
       unpause_count += that.unpause_count;
       lifo_count += that.lifo_count;
+      lifo_many_count += that.lifo_many_count;
       cown_count += that.cown_count;
 
       for (size_t i = 0; i < behaviour_count.size(); i++)
@@ -142,6 +151,7 @@ namespace verona::rt
             << "DumpID"
             << "Steal"
             << "LIFO"
+            << "LIFOMany"
             << "Pause"
             << "Unpause"
             << "Cown count";
@@ -153,7 +163,7 @@ namespace verona::rt
       }
 
       csv << "SchedulerStats" << get_tag() << dumpid << steal_count
-          << lifo_count << pause_count << unpause_count << cown_count;
+          << lifo_count << lifo_many_count << pause_count << unpause_count << cown_count;
 
       for (size_t i = 0; i < behaviour_count.size(); i++)
         csv << behaviour_count[i];
@@ -163,6 +173,7 @@ namespace verona::rt
       pause_count = 0;
       unpause_count = 0;
       lifo_count = 0;
+      lifo_many_count = 0;
       cown_count = 0;
 
       for (size_t i = 0; i < behaviour_count.size(); i++)
