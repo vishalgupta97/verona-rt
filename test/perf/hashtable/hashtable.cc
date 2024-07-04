@@ -4,14 +4,16 @@
 #include <debug/harness.h>
 #include <memory>
 
-#define NUM_BUCKETS             1
-#define NUM_ENTRIES_PER_BUCKET  128
-#define NUM_OPERATIONS          100000000
-#define RW_RATIO                90          // X% readers
-
 #define DEBUG_RW                0
 
 using namespace verona::cpp;
+
+long num_buckets = 1;
+long num_entries_per_bucket = 128;
+long num_operations = 100'000'000;
+long rw_ratio = 90;                         // X% readers
+long read_loop_count = 100;
+long write_loop_count = 100;
 
 class Entry {
   public:
@@ -48,13 +50,13 @@ std::atomic<long> total_not_found_write_ops = 0;
 std::atomic<long> total_read_cs_time = 0;
 std::atomic<long> total_write_cs_time = 0;
 
-void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS * 2>> stats)
+#if DEBUG_RW
+    auto stats = std::make_shared<std::array<std::atomic<size_t>, num_buckets * 2>>();
+#endif
+
+void test_hash_table()
 {
     auto t1 = high_resolution_clock::now();
-    size_t num_buckets = NUM_BUCKETS;
-    size_t num_entries_per_bucket = NUM_ENTRIES_PER_BUCKET;
-    size_t num_operations = NUM_OPERATIONS;
-    size_t rw_ratio = RW_RATIO; 
     
     std::shared_ptr<std::vector<cown_ptr<Bucket>>> buckets = std::make_shared<std::vector<cown_ptr<Bucket>>>();
 
@@ -90,7 +92,7 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS
                     }
                 }
 
-                for(volatile int i = 0; i < 100; i++)
+                for(volatile int i = 0; i < read_loop_count; i++)
                     Aal::pause();
 
                 if(found)
@@ -122,7 +124,7 @@ void test_hash_table(std::shared_ptr<std::array<std::atomic<size_t>, NUM_BUCKETS
                     }
                 }
 
-                for(volatile int i = 0; i < 100; i++)
+                for(volatile int i = 0; i < write_loop_count; i++)
                     Aal::pause();
 
                 if(found)
@@ -169,23 +171,42 @@ void finish(void) {
 
 int main(int argc, char** argv)
 {
+    opt::Opt opt(argc, argv);
+
+    num_buckets = opt.is<size_t>("--num_buckets", 1);
+    num_entries_per_bucket = opt.is<size_t>("--num_entries_per_bucket", 128);
+    num_operations = opt.is<size_t>("--num_operations", 100'000'000);
+    rw_ratio = opt.is<size_t>("--rw_ratio", 90);
+    read_loop_count = opt.is<size_t>("--read_loop_count", 100);
+    write_loop_count = opt.is<size_t>("--write_loop_count", 100);
+
     SystematicTestHarness harness(argc, argv);
-    auto stats = std::make_shared<std::array<std::atomic<size_t>, NUM_BUCKETS * 2>>();
     
     harness.endf = finish;
 
     auto t1 = high_resolution_clock::now();
-    harness.run(test_hash_table, stats);
+    harness.run(test_hash_table);
     auto t2 = high_resolution_clock::now();
 
+#if DEBUG_RW
     for(int i = 0; i < NUM_BUCKETS; i++)
         assert((*stats)[i].load() == 0);
+#endif
 
-    std::cout << "Total ops: " << (total_found_read_ops.load() + total_found_write_ops.load() + total_not_found_read_ops.load() + total_not_found_write_ops.load())
-                            << " found read ops: " << total_found_read_ops.load() 
-                            << " not found read ops: " << total_not_found_read_ops.load()
-                            << " found write ops: " << total_found_write_ops.load()
-                            << " not found write ops: " << total_not_found_write_ops.load() << std::endl;
+    std::cout   << "Num Buckets: " << num_buckets
+                << " Num entries per bucket: " << num_entries_per_bucket
+                << " Num operations: " << num_operations
+                << " Read write ratio: " << rw_ratio
+                << " Read loop count: " << read_loop_count
+                << " Write loop count: " << write_loop_count
+                << std::endl;
+
+    std::cout   << "Total ops: " << (total_found_read_ops.load() + total_found_write_ops.load() + total_not_found_read_ops.load() + total_not_found_write_ops.load())
+                << " found read ops: " << total_found_read_ops.load() 
+                << " not found read ops: " << total_not_found_read_ops.load()
+                << " found write ops: " << total_found_write_ops.load()
+                << " not found write ops: " << total_not_found_write_ops.load() 
+                << std::endl;
 
     std::cout << "Avg Read CS time: " << ((double)total_read_cs_time.load())/(total_found_read_ops.load() + total_not_found_read_ops.load()) << " ns" << std::endl;
     std::cout << "Avg Write CS time: " << ((double)total_write_cs_time.load())/(total_found_write_ops.load() + total_not_found_write_ops.load()) << " ns" << std::endl;

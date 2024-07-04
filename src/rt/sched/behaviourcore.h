@@ -955,7 +955,7 @@ namespace verona::rt
 
       } else {
           Logging::cout() << this << " Writer waking up next writer cown " << 
- cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
+          cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                   << " next slot " << next_slot 
                     << " behaviour " << get_behaviour() << Logging::endl;
           next_slot->blocked = false;
