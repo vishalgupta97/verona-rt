@@ -1,0 +1,86 @@
+Harness starting.
+ ./build_ninja/test/perf-con-hashtable --cores 72 --allow_leaks --read_loop_count 100 --write_loop_count 100 --rw_ratio 0 --num_operations 20000000 --seed 592159294
+Seed: 592159294
+Behaviour generation Elapsed time: 2096ms 2096785us 2096785247ns
+Total ops: 0 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138691864437120 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414649144896 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414464505408 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414607181376 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138415033022016 found read ops: 0 not found read ops: 0 found write ops: 9995677 not found write ops: 10004323
+Thread: 138414489683520 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414380578368 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414506468928 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414481290816 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414665930304 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414716286528 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414372185664 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414682715712 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414674323008 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414691108416 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414749857344 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414699501120 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414850569792 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414791820864 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414825391680 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414808606272 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414758250048 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414833784384 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414816998976 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414741464640 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414842177088 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414999451200 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414991058496 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138415007843904 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414982665792 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414422541888 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414430934592 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414974273088 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138415024629312 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138415016236608 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414957487680 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414724679232 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414590395968 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414598788672 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414523254336 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414949094976 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414632359488 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414623966784 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414965880384 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414733071936 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414582003264 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414548432448 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414405756480 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414783428160 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414573610560 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414456112704 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414657537600 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414531647040 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414775035456 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414940702272 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414640752192 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414932309568 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414565217856 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414540039744 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414766642752 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414498076224 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414707893824 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414556825152 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414615574080 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414514861632 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414414149184 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414800213568 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414472898112 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414447720000 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414439327296 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414397363776 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 138414388971072 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+SchedulerStats,Tag,DumpID,Steal,LIFO,LIFOMany,Pause,Unpause,Cown count,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+SchedulerStats,,0,0,1,0,72,0,1,0,20000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+Time so far: 20 seconds
+Test Harness Finished!
+Num Buckets: 1 Num entries per bucket: 128 Num operations: 20000000 Read write ratio: 0 Read loop count: 100 Write loop count: 100
+Total ops: 20000000 found read ops: 0 not found read ops: 0 found write ops: 9995677 not found write ops: 10004323
+Avg Read CS time: -nan ns
+Avg Write CS time: 872.051 ns
+Elapsed time: 20401ms 20401053us 20401053270ns

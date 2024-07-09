@@ -1,0 +1,7 @@
+Harness starting.
+ ./build_ninja/test/perf-con-hashtable --cores 36 --allow_leaks --seed 3252526299
+Seed: 3252526299
+Behaviour generation Elapsed time: 10879ms 10879209us 10879209736ns
+Time so far: 11 seconds
+Test Harness Finished!
+Elapsed time: 11669ms 11669758us 11669758387ns

@@ -1,0 +1,5 @@
+Harness starting.
+ ./build_ninja/test/perf-con-hashtable --cores 18 --allow_leaks --read_loop_count 200 --write_loop_count 200 --rw_ratio 99 --num_operations 20000000 --seed 2014839531
+Seed: 2014839531
+Behaviour generation Elapsed time: 2608ms 2608458us 2608458685ns
+Total ops: 0 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0

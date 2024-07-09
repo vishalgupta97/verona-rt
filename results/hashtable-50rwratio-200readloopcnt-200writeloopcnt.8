@@ -1,0 +1,22 @@
+Harness starting.
+ ./build_ninja/test/perf-con-hashtable --cores 8 --allow_leaks --read_loop_count 200 --write_loop_count 200 --rw_ratio 50 --num_operations 20000000 --seed 1759287
+Seed: 1759287
+Behaviour generation Elapsed time: 2346ms 2346438us 2346438826ns
+Total ops: 0 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 125186537944640 found read ops: 624482 not found read ops: 625472 found write ops: 524666 not found write ops: 525492
+Thread: 125186495981120 found read ops: 625238 not found read ops: 624706 found write ops: 835666 not found write ops: 837186
+Thread: 125186512766528 found read ops: 624631 not found read ops: 625318 found write ops: 614346 not found write ops: 615060
+Thread: 125186529551936 found read ops: 624598 not found read ops: 625350 found write ops: 660831 not found write ops: 661887
+Thread: 125186504373824 found read ops: 625290 not found read ops: 624648 found write ops: 618948 not found write ops: 620301
+Thread: 125186521159232 found read ops: 624835 not found read ops: 625111 found write ops: 671988 not found write ops: 672405
+Thread: 125186370156096 found read ops: 625071 not found read ops: 624870 found write ops: 671925 not found write ops: 672981
+Thread: 125463368610176 found read ops: 624657 not found read ops: 625294 found write ops: 398505 not found write ops: 398242
+SchedulerStats,Tag,DumpID,Steal,LIFO,LIFOMany,Pause,Unpause,Cown count,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+SchedulerStats,,0,0,9999218,177,79,30,1,0,20000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+Time so far: 35 seconds
+Test Harness Finished!
+Num Buckets: 1 Num entries per bucket: 128 Num operations: 20000000 Read write ratio: 50 Read loop count: 200 Write loop count: 200
+Total ops: 20000000 found read ops: 4998802 not found read ops: 5000769 found write ops: 4996875 not found write ops: 5003554
+Avg Read CS time: 1943.63 ns
+Avg Write CS time: 1970.28 ns
+Elapsed time: 35805ms 35805269us 35805269218ns
