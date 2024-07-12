@@ -840,10 +840,10 @@ namespace verona::rt
       }
 
       if(next_slot->is_read_only()) {
-        //std::vector<Slot*> next_pending_readers;
+        std::vector<Slot*> next_pending_readers;
         //next_pending_readers.reserve(200);
-        std::array<Slot*,500> next_pending_readers; //TODO: Fix this 
-        int index = 0;
+        //std::array<Slot*,1000> next_pending_readers; //TODO: Fix this 
+        //int index = 0;
         bool first_reader = cown->read_ref_count.add_read();
         yield();
         next_slot->blocked = false;
@@ -855,7 +855,8 @@ namespace verona::rt
         Logging::cout()
                 << "Acquiring reference count for first reader on cown " << cown << Logging::endl;
         Cown::acquire(cown);
-        next_pending_readers[index++] = next_slot;
+        next_pending_readers.push_back(next_slot);
+        //next_pending_readers[index++] = next_slot;
 
         auto curr_slot = next_slot;
         while(curr_slot->is_next_slot_read_only()) {
@@ -867,12 +868,13 @@ namespace verona::rt
           yield();
           //cown->read_ref_count.add_read();
           curr_slot->next_slot->blocked = false;
-          Logging::cout() << next_slot << " Reader waking up next reader cown " << 
+          Logging::cout() << next_slot << " Writer loop waking up next reader cown " << 
           cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                           << " Next slot " << curr_slot->next_slot
                           << " behaviour " << curr_slot->next_slot->get_behaviour() << Logging::endl;
-          next_pending_readers[index++] = curr_slot->next_slot;
-          assert(index < 500);
+          next_pending_readers.push_back(curr_slot->next_slot);
+          //next_pending_readers[index++] = curr_slot->next_slot;
+          //assert(index < 1000);
           curr_slot = curr_slot->next_slot;
 
           // next_slot = curr_slot->next_slot;
@@ -891,20 +893,27 @@ namespace verona::rt
           // curr_slot = next_slot;
         }
 
+        int index = next_pending_readers.size();
         cown->read_ref_count.add_read(index - 1);
 
         // static thread_local long max_next_pending_readers = 0;
+        // static thread_local long sum_next_pending_readers = 0;
+        // static thread_local long count_next_pending_readers = 0;
+
+        // sum_next_pending_readers += index;
+        // count_next_pending_readers += 1;
 
         // if(max_next_pending_readers < index) {
         //   max_next_pending_readers = index;
-        //   printf("Pending readers size: %ld\n", max_next_pending_readers);
+        //   printf("Pending readers size Max: %ld Average: %lf Count: %ld\n", max_next_pending_readers, 
+        //         (sum_next_pending_readers * 1.0 / count_next_pending_readers), count_next_pending_readers);
         // }
 
         //for(auto reader: next_pending_readers) {
 
-        #define NUM_CORES 16 //TODO: Fix this to (number of thread - 1)
+        #define NUM_CORES 18 //TODO: Fix this to (number of thread - 1)
 
-        if(index >= NUM_CORES) {
+        if(index > NUM_CORES) {
           std::array<Slot*,NUM_CORES> end_readers;
           for(int i = 0; i < NUM_CORES; i++) {
             end_readers[i] = next_pending_readers[i];
@@ -924,7 +933,6 @@ namespace verona::rt
             }
             assert(reader->is_behaviour());
             assert(reader->get_behaviour()->exec_count_down.load(std::memory_order_acquire) == 1);
-
             prev_reader->get_behaviour()->as_work()->next_in_queue = reader->get_behaviour()->as_work();
             end_readers[i % NUM_CORES] = reader;
           }

@@ -1,5 +1,22 @@
 Harness starting.
- ./build_ninja/test/perf-con-hashtable --cores 8 --allow_leaks --read_loop_count 200 --write_loop_count 100 --rw_ratio 99 --num_operations 20000000 --seed 1401367119
-Seed: 1401367119
-Behaviour generation Elapsed time: 2618ms 2618515us 2618515395ns
+ ./build_ninja/test/perf-con-hashtable --cores 8 --allow_leaks --read_loop_count 200 --write_loop_count 100 --rw_ratio 99 --num_operations 20000000 --seed 1358617694
+Seed: 1358617694
+Behaviour generation Elapsed time: 2614ms 2614927us 2614927876ns
 Total ops: 0 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 131737622208896 found read ops: 1212623 not found read ops: 1214335 found write ops: 81 not found write ops: 93
+Thread: 131460774221376 found read ops: 1242155 not found read ops: 1241369 found write ops: 11595 not found write ops: 11566
+Thread: 131460757435968 found read ops: 1245596 not found read ops: 1247813 found write ops: 15027 not found write ops: 14936
+Thread: 131460765828672 found read ops: 1233331 not found read ops: 1234886 found write ops: 13490 not found write ops: 13418
+Thread: 131460740650560 found read ops: 1260612 not found read ops: 1261644 found write ops: 24897 not found write ops: 24911
+Thread: 131460749043264 found read ops: 1228296 not found read ops: 1228694 found write ops: 10105 not found write ops: 10129
+Thread: 131460791006784 found read ops: 1223346 not found read ops: 1225189 found write ops: 822 not found write ops: 843
+Thread: 131460782614080 found read ops: 1249558 not found read ops: 1250133 found write ops: 24143 not found write ops: 24364
+SchedulerStats,Tag,DumpID,Steal,LIFO,LIFOMany,Pause,Unpause,Cown count,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+SchedulerStats,,0,0,237725,2743407,8,0,1,0,20000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+Time so far: 11 seconds
+Test Harness Finished!
+Num Buckets: 1 Num entries per bucket: 128 Num operations: 20000000 Read write ratio: 99 Read loop count: 200 Write loop count: 100
+Total ops: 20000000 found read ops: 9895517 not found read ops: 9904063 found write ops: 100160 not found write ops: 100260
+Avg Read CS time: 1930.82 ns
+Avg Write CS time: 1100.27 ns
+Elapsed time: 11053ms 11053949us 11053949242ns

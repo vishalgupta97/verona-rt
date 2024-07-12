@@ -1,5 +1,15 @@
 Harness starting.
- ./build_ninja/test/perf-con-hashtable --cores 1 --allow_leaks --read_loop_count 200 --write_loop_count 0 --rw_ratio 99 --num_operations 20000000 --seed 4292758087
-Seed: 4292758087
-Behaviour generation Elapsed time: 2603ms 2603199us 2603199147ns
+ ./build_ninja/test/perf-con-hashtable --cores 1 --allow_leaks --read_loop_count 200 --write_loop_count 0 --rw_ratio 99 --num_operations 20000000 --seed 2522507538
+Seed: 2522507538
+Behaviour generation Elapsed time: 2595ms 2595167us 2595167241ns
 Total ops: 0 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 127255672975744 found read ops: 9895517 not found read ops: 9904063 found write ops: 100160 not found write ops: 100260
+SchedulerStats,Tag,DumpID,Steal,LIFO,LIFOMany,Pause,Unpause,Cown count,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+SchedulerStats,,0,0,237725,2743407,1,0,1,0,20000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+Time so far: 37 seconds
+Test Harness Finished!
+Num Buckets: 1 Num entries per bucket: 128 Num operations: 20000000 Read write ratio: 99 Read loop count: 200 Write loop count: 0
+Total ops: 20000000 found read ops: 9895517 not found read ops: 9904063 found write ops: 100160 not found write ops: 100260
+Avg Read CS time: 1658.49 ns
+Avg Write CS time: 82.6823 ns
+Elapsed time: 37087ms 37087374us 37087374068ns

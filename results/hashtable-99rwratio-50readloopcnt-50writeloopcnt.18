@@ -1,5 +1,32 @@
 Harness starting.
- ./build_ninja/test/perf-con-hashtable --cores 18 --allow_leaks --read_loop_count 50 --write_loop_count 50 --rw_ratio 99 --num_operations 20000000 --seed 339343682
-Seed: 339343682
-Behaviour generation Elapsed time: 2623ms 2623707us 2623707120ns
+ ./build_ninja/test/perf-con-hashtable --cores 18 --allow_leaks --read_loop_count 50 --write_loop_count 50 --rw_ratio 99 --num_operations 20000000 --seed 1956466842
+Seed: 1956466842
+Behaviour generation Elapsed time: 2608ms 2608565us 2608565992ns
 Total ops: 0 found read ops: 0 not found read ops: 0 found write ops: 0 not found write ops: 0
+Thread: 131191017551424 found read ops: 527472 not found read ops: 528119 found write ops: 6535 not found write ops: 6624
+Thread: 131191587993152 found read ops: 569351 not found read ops: 568821 found write ops: 2622 not found write ops: 2598
+Thread: 131191673972288 found read ops: 578899 not found read ops: 577795 found write ops: 2242 not found write ops: 2171
+Thread: 131191051122240 found read ops: 542766 not found read ops: 543489 found write ops: 5164 not found write ops: 5327
+Thread: 131191579600448 found read ops: 563431 not found read ops: 563421 found write ops: 2043 not found write ops: 2104
+Thread: 131191682364992 found read ops: 579456 not found read ops: 580211 found write ops: 18 not found write ops: 28
+Thread: 131191554422336 found read ops: 562327 not found read ops: 561599 found write ops: 10483 not found write ops: 10373
+Thread: 131191571207744 found read ops: 562329 not found read ops: 562370 found write ops: 4390 not found write ops: 4527
+Thread: 131191562815040 found read ops: 557840 not found read ops: 557067 found write ops: 4584 not found write ops: 4615
+Thread: 131191009158720 found read ops: 529505 not found read ops: 531012 found write ops: 10963 not found write ops: 10940
+Thread: 131191537636928 found read ops: 554330 not found read ops: 554888 found write ops: 9489 not found write ops: 9393
+Thread: 131468513309056 found read ops: 510508 not found read ops: 512135 found write ops: 4332 not found write ops: 4281
+Thread: 131191665579584 found read ops: 572572 not found read ops: 572890 found write ops: 1664 not found write ops: 1713
+Thread: 131191546029632 found read ops: 550185 not found read ops: 550306 found write ops: 3386 not found write ops: 3463
+Thread: 131191042729536 found read ops: 544680 not found read ops: 547062 found write ops: 10041 not found write ops: 10092
+Thread: 131191000766016 found read ops: 522229 not found read ops: 524869 found write ops: 9340 not found write ops: 9349
+Thread: 131191025944128 found read ops: 531352 not found read ops: 532383 found write ops: 6459 not found write ops: 6414
+Thread: 131191034336832 found read ops: 536285 not found read ops: 535626 found write ops: 6405 not found write ops: 6248
+SchedulerStats,Tag,DumpID,Steal,LIFO,LIFOMany,Pause,Unpause,Cown count,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+SchedulerStats,,0,0,237725,2743407,28,10,1,0,20000000,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+Time so far: 4 seconds
+Test Harness Finished!
+Num Buckets: 1 Num entries per bucket: 128 Num operations: 20000000 Read write ratio: 99 Read loop count: 50 Write loop count: 50
+Total ops: 20000000 found read ops: 9895517 not found read ops: 9904063 found write ops: 100160 not found write ops: 100260
+Avg Read CS time: 682.676 ns
+Avg Write CS time: 627.218 ns
+Elapsed time: 4920ms 4920798us 4920798969ns
