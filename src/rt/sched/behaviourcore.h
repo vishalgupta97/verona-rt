@@ -840,10 +840,22 @@ namespace verona::rt
       }
 
       if(next_slot->is_read_only()) {
-        std::vector<Slot*> next_pending_readers;
-        //next_pending_readers.reserve(200);
-        //std::array<Slot*,1000> next_pending_readers; //TODO: Fix this 
-        //int index = 0;
+
+        #define NUM_CORES 18 //TODO: Fix this to (number of thread - 1)
+        #define WORK_BATCH_COUNT 5
+
+        std::array<Slot*, NUM_CORES> reader_queue_head;
+        std::array<Slot*, NUM_CORES> reader_queue_tail;
+        std::array<int, NUM_CORES> reader_queue_size;
+        for(int i = 0; i < NUM_CORES; i++) {
+          reader_queue_head[i] = nullptr;
+          reader_queue_tail[i] = nullptr;
+          reader_queue_size[i] = 0;
+        }
+
+        int pos = 0;
+        int index = 0;
+
         bool first_reader = cown->read_ref_count.add_read();
         yield();
         next_slot->blocked = false;
@@ -855,8 +867,9 @@ namespace verona::rt
         Logging::cout()
                 << "Acquiring reference count for first reader on cown " << cown << Logging::endl;
         Cown::acquire(cown);
-        next_pending_readers.push_back(next_slot);
-        //next_pending_readers[index++] = next_slot;
+        reader_queue_head[pos] = next_slot;
+        reader_queue_tail[pos] = next_slot;
+        index++;
 
         auto curr_slot = next_slot;
         while(curr_slot->is_next_slot_read_only()) {
@@ -866,100 +879,116 @@ namespace verona::rt
             Aal::pause();
           }
           yield();
-          //cown->read_ref_count.add_read();
-          curr_slot->next_slot->blocked = false;
+          auto reader = curr_slot->next_slot;
+          reader->blocked = false;
           Logging::cout() << next_slot << " Writer loop waking up next reader cown " << 
           cown << " read_ref_count " << cown->read_ref_count.count << " next_writer " << cown->next_writer << " last_slot " << cown->last_slot << " " 
                           << " Next slot " << curr_slot->next_slot
                           << " behaviour " << curr_slot->next_slot->get_behaviour() << Logging::endl;
-          next_pending_readers.push_back(curr_slot->next_slot);
-          //next_pending_readers[index++] = curr_slot->next_slot;
-          //assert(index < 1000);
+          yield();
+          if(reader->is_ready()) {
+            yield();
+            while (reader->is_ready())
+            {
+              Systematic::yield_until([curr_slot]() { return !(curr_slot->next_slot->is_ready()); });
+              Aal::pause();
+            }
+          }
+          assert(reader->is_behaviour());
+          assert(reader->get_behaviour()->exec_count_down.load(std::memory_order_acquire) == 1);
+
+          if(index % WORK_BATCH_COUNT == 0)
+            pos = (pos + 1) % NUM_CORES;
+
+          if(reader_queue_head[pos] == nullptr) {
+
+            reader_queue_head[pos] = reader;
+            reader_queue_tail[pos] = reader;
+          } else {
+            reader_queue_tail[pos]->get_behaviour()->as_work()->next_in_queue = reader->get_behaviour()->as_work();
+            reader_queue_tail[pos] = reader;
+          }
+          index++;
+
           curr_slot = curr_slot->next_slot;
-
-          // next_slot = curr_slot->next_slot;
-          // yield();
-          // if(next_slot->is_ready()) { //TODO: Fix this, it will not work for some cases.
-          //   yield();
-          //   while (next_slot->is_ready())
-          //   {
-          //     Systematic::yield_until([curr_slot]() { return !(curr_slot->next_slot->is_ready()); });
-          //     Aal::pause();
-          //   }
-          // }
-          // assert(next_slot->is_behaviour());
-          // next_slot->get_behaviour()->resolve(1, false);
-
-          // curr_slot = next_slot;
         }
 
-        int index = next_pending_readers.size();
         cown->read_ref_count.add_read(index - 1);
 
-        // static thread_local long max_next_pending_readers = 0;
-        // static thread_local long sum_next_pending_readers = 0;
-        // static thread_local long count_next_pending_readers = 0;
+        static thread_local long max_next_pending_readers = 0;
+        static thread_local long sum_next_pending_readers = 0;
+        static thread_local long count_next_pending_readers = 0;
 
-        // sum_next_pending_readers += index;
-        // count_next_pending_readers += 1;
+        sum_next_pending_readers += index;
+        count_next_pending_readers += 1;
 
-        // if(max_next_pending_readers < index) {
-        //   max_next_pending_readers = index;
-        //   printf("Pending readers size Max: %ld Average: %lf Count: %ld\n", max_next_pending_readers, 
-        //         (sum_next_pending_readers * 1.0 / count_next_pending_readers), count_next_pending_readers);
-        // }
-
-        //for(auto reader: next_pending_readers) {
-
-        #define NUM_CORES 18 //TODO: Fix this to (number of thread - 1)
-
-        if(index > NUM_CORES) {
-          std::array<Slot*,NUM_CORES> end_readers;
-          for(int i = 0; i < NUM_CORES; i++) {
-            end_readers[i] = next_pending_readers[i];
-          }
-
-          for(int i = NUM_CORES; i < index; i++) {
-            auto reader = next_pending_readers[i];
-            auto prev_reader = next_pending_readers[i - NUM_CORES];
-            yield();
-            if(reader->is_ready()) {
-              yield();
-              while (reader->is_ready())
-              {
-                Systematic::yield_until([reader]() { return !(reader->is_ready()); });
-                Aal::pause();
-              }
-            }
-            assert(reader->is_behaviour());
-            assert(reader->get_behaviour()->exec_count_down.load(std::memory_order_acquire) == 1);
-            prev_reader->get_behaviour()->as_work()->next_in_queue = reader->get_behaviour()->as_work();
-            end_readers[i % NUM_CORES] = reader;
-          }
-
-          for(int i = 0; i < NUM_CORES; i++) {
-            if(next_pending_readers[i] != end_readers[i])
-              Scheduler::schedule_many(next_pending_readers[i]->get_behaviour()->as_work(), end_readers[i]->get_behaviour()->as_work());
-            else
-              Scheduler::schedule(next_pending_readers[i]->get_behaviour()->as_work(), false);
-          }
+        if(max_next_pending_readers < index) {
+          max_next_pending_readers = index;
+          printf("Pending readers size Max: %ld Average: %lf Count: %ld\n", max_next_pending_readers, 
+                (sum_next_pending_readers * 1.0 / count_next_pending_readers), count_next_pending_readers);
         }
-        else {
-          for(int i = 0; i < index; i++) {
-            auto reader = next_pending_readers[i];
-            yield();
-            if(reader->is_ready()) {
-              yield();
-              while (reader->is_ready())
-              {
-                Systematic::yield_until([reader]() { return !(reader->is_ready()); });
-                Aal::pause();
-              }
-            }
-            assert(reader->is_behaviour());
-            reader->get_behaviour()->resolve(1, false);
-          }
+
+        for(int i = 0; i < NUM_CORES; i++) {
+          if(reader_queue_head[i] == nullptr)
+            break;
+
+          //printf(" reader queue %d size %d ", i, reader_queue_size[i]);
+
+          if(reader_queue_head[i] == reader_queue_tail[i])
+            Scheduler::schedule(reader_queue_head[i]->get_behaviour()->as_work());
+          else
+            Scheduler::schedule_many(reader_queue_head[i]->get_behaviour()->as_work(), reader_queue_tail[i]->get_behaviour()->as_work());
         }
+        //printf("\n");
+
+
+      //   if(index > NUM_CORES) {
+      //     std::array<Slot*,NUM_CORES> end_readers;
+      //     for(int i = 0; i < NUM_CORES; i++) {
+      //       end_readers[i] = next_pending_readers[i];
+      //     }
+
+      //     for(int i = NUM_CORES; i < index; i++) {
+      //       auto reader = next_pending_readers[i];
+      //       auto prev_reader = next_pending_readers[i - NUM_CORES];
+      //       yield();
+      //       if(reader->is_ready()) {
+      //         yield();
+      //         while (reader->is_ready())
+      //         {
+      //           Systematic::yield_until([reader]() { return !(reader->is_ready()); });
+      //           Aal::pause();
+      //         }
+      //       }
+      //       assert(reader->is_behaviour());
+      //       assert(reader->get_behaviour()->exec_count_down.load(std::memory_order_acquire) == 1);
+      //       prev_reader->get_behaviour()->as_work()->next_in_queue = reader->get_behaviour()->as_work();
+      //       end_readers[i % NUM_CORES] = reader;
+      //     }
+
+      //     for(int i = 0; i < NUM_CORES; i++) {
+      //       if(next_pending_readers[i] != end_readers[i])
+      //         Scheduler::schedule_many(next_pending_readers[i]->get_behaviour()->as_work(), end_readers[i]->get_behaviour()->as_work());
+      //       else
+      //         Scheduler::schedule(next_pending_readers[i]->get_behaviour()->as_work(), false);
+      //     }
+      //   }
+      //   else {
+      //     for(int i = 0; i < index; i++) {
+      //       auto reader = next_pending_readers[i];
+      //       yield();
+      //       if(reader->is_ready()) {
+      //         yield();
+      //         while (reader->is_ready())
+      //         {
+      //           Systematic::yield_until([reader]() { return !(reader->is_ready()); });
+      //           Aal::pause();
+      //         }
+      //       }
+      //       assert(reader->is_behaviour());
+      //       reader->get_behaviour()->resolve(1, false);
+      //     }
+      //   }
 
       } else {
           Logging::cout() << this << " Writer waking up next writer cown " << 
