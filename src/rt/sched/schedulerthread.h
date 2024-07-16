@@ -14,7 +14,7 @@
 
 #include <snmalloc/snmalloc.h>
 
-#define STEALING 0
+#define STEALING 1
 
 namespace verona::rt
 {
@@ -116,11 +116,12 @@ namespace verona::rt
         c->stats.unpause();
     }
 
-    static inline void schedule_many_lifo(Core* c, Work* begin, Work* end)
+    static inline void
+    schedule_many_lifo(Core* c, Work* begin, Work* end, long size)
     {
       c->q.enqueue_range_front(begin, end);
 
-      c->stats.lifo_many();
+      c->stats.lifo_many(size);
 
       if (Scheduler::get().unpause())
         c->stats.unpause();
@@ -248,7 +249,7 @@ namespace verona::rt
     {
       Work* work = nullptr;
 #if STEALING
-      //Try to steal from the victim thread.
+      // Try to steal from the victim thread.
       if (victim != core)
       {
         work = victim->q.dequeue(*alloc);

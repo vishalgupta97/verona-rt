@@ -92,10 +92,10 @@ namespace verona::rt
 #endif
     }
 
-    void lifo_many()
+    void lifo_many(long size)
     {
 #ifdef USE_SCHED_STATS
-      lifo_many_count++;
+      lifo_many_count += size;
 #endif
     }
 
@@ -146,15 +146,8 @@ namespace verona::rt
       {
         // Output headers for initial dump
         // Keep in sync with data dump
-        csv << "SchedulerStats"
-            << "Tag"
-            << "DumpID"
-            << "Steal"
-            << "LIFO"
-            << "LIFOMany"
-            << "Pause"
-            << "Unpause"
-            << "Cown count";
+        csv << "SchedulerStats" << "Tag" << "DumpID" << "Steal" << "LIFO"
+            << "LIFOMany" << "Pause" << "Unpause" << "Cown count";
 
         for (size_t i = 0; i < behaviour_count.size(); i++)
           csv << i;
@@ -163,7 +156,8 @@ namespace verona::rt
       }
 
       csv << "SchedulerStats" << get_tag() << dumpid << steal_count
-          << lifo_count << lifo_many_count << pause_count << unpause_count << cown_count;
+          << lifo_count << lifo_many_count << pause_count << unpause_count
+          << cown_count;
 
       for (size_t i = 0; i < behaviour_count.size(); i++)
         csv << behaviour_count[i];

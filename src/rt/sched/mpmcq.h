@@ -123,8 +123,8 @@ namespace verona::rt
       // Hold epoch to ensure that the value read from `front` cannot be
       // deallocated during this operation.  This must occur before read of
       // front.
-      // Epoch e(alloc);
-      // uint64_t epoch = e.get_local_epoch_epoch();
+      Epoch e(alloc);
+      uint64_t epoch = e.get_local_epoch_epoch();
 
       auto cmp = front.read();
       do
@@ -145,9 +145,9 @@ namespace verona::rt
           return nullptr;
       } while (!cmp.store_conditional(next));
 
-      // assert(epoch != T::NO_EPOCH_SET);
+      assert(epoch != T::NO_EPOCH_SET);
 
-      // fnt->epoch_when_popped = epoch;
+      fnt->epoch_when_popped = epoch;
 
       return fnt;
     }

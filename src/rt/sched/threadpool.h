@@ -199,10 +199,10 @@ namespace verona::rt
       T::schedule_lifo(core, w);
     }
 
-    static void schedule_many(Work* begin, Work* end)
+    static void schedule_many(Work* begin, Work* end, long size)
     {
       auto* core = round_robin();
-      T::schedule_many_lifo(core, begin, end);
+      T::schedule_many_lifo(core, begin, end, size);
     }
 
     void init(size_t count)
