@@ -238,7 +238,8 @@ namespace verona::rt
       }
 
       Systematic::finished_thread();
-      endf();
+      if (endf)
+        endf();
 
       // Reset the local thread pointer as this physical thread could be reused
       // for a different SchedulerThread later.
