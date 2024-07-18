@@ -305,26 +305,26 @@ int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
 
-  // harness.run(test_span);
-  // harness.run(test_span_empty);
-  // harness.run(test_span_single);
-  // harness.run(test_multi_span);
+  harness.run(test_span);
+  harness.run(test_span_empty);
+  harness.run(test_span_single);
+  harness.run(test_multi_span);
 
-  // harness.run(test_mixed1);
-  // harness.run(test_mixed2);
-  // harness.run(test_mixed3);
-  // harness.run(test_mixed4);
+  harness.run(test_mixed1);
+  harness.run(test_mixed2);
+  harness.run(test_mixed3);
+  harness.run(test_mixed4);
 
   harness.run(test_multi1);
   harness.run(test_multi2);
   harness.run(test_multi3);
 
-  // harness.run(test_nest1);
-  // harness.run(test_nest2);
+  harness.run(test_nest1);
+  harness.run(test_nest2);
 
-  // harness.run(test_move);
+  harness.run(test_move);
 
-  // harness.run(test_repeated_cown);
+  harness.run(test_repeated_cown);
 
   return 0;
 }
