@@ -267,7 +267,7 @@ namespace verona::rt
      *
      * Returns true if this call makes the count_down_zero
      */
-    void resolve(size_t n = 1, bool fifo = true)
+    bool resolve(size_t n = 1, bool fifo = true, bool schedule = true)
     {
       Logging::cout() << "Behaviour::resolve " << n << " for behaviour " << this
                       << Logging::endl;
@@ -278,8 +278,12 @@ namespace verona::rt
         (exec_count_down.fetch_sub(n) == n))
       {
         Logging::cout() << "Scheduling Behaviour " << this << Logging::endl;
-        Scheduler::schedule(as_work(), fifo);
+        if(schedule)
+          Scheduler::schedule(as_work(), fifo);
+        return true;
       }
+
+      return false;
     }
 
     // TODO: When C++ 20 move to span.
@@ -799,7 +803,7 @@ namespace verona::rt
     // This slot represents a duplicate cown, so we can ignore releasing it.
     if (cown == nullptr)
     {
-      Logging::cout() << "Duplicate cown" << Logging::endl;
+      Logging::cout() << "Duplicate cown slot " << this << Logging::endl;
       return;
     }
 
@@ -1006,12 +1010,10 @@ namespace verona::rt
           }
         }
         assert(next_slot->is_behaviour());
-        assert(
-          next_slot->get_behaviour()->exec_count_down.load(
-            std::memory_order_acquire) == 1);
-
-        reader_queue_head[pos] = next_slot;
-        reader_queue_tail[pos] = next_slot;
+        if(next_slot->get_behaviour()->resolve(1, true, false)) {
+          reader_queue_head[pos] = next_slot;
+          reader_queue_tail[pos] = next_slot;
+        } 
         index++;
 
         auto curr_slot = next_slot;
@@ -1047,53 +1049,52 @@ namespace verona::rt
             }
           }
           assert(reader->is_behaviour());
-          assert(
-            reader->get_behaviour()->exec_count_down.load(
-              std::memory_order_acquire) == 1);
 
           // if (index % WORK_BATCH_COUNT == 0)
           //   pos = (pos + 1) % NUM_CORES;
 
-          if (reader_queue_size[pos] == WORK_BATCH_COUNT)
-          {
-            yield();
-            cown->read_ref_count.add_read(reader_queue_size[pos]);
-            Logging::cout()
-              << this << " Writer loop scheduling readers cown " << cown
-              << " read_ref_count " << cown->read_ref_count.count
-              << " first reader " << reader_queue_head[pos] << " last reader "
-              << reader_queue_tail[pos] << " num readers "
-              << reader_queue_size[pos] << " last_slot " << cown->last_slot
-              << Logging::endl;
-            yield();
-            if (reader_queue_head[pos] == reader_queue_tail[pos])
-              Scheduler::schedule(
-                reader_queue_head[pos]->get_behaviour()->as_work());
-            else
-              Scheduler::schedule_many(
-                reader_queue_head[pos]->get_behaviour()->as_work(),
-                reader_queue_tail[pos]->get_behaviour()->as_work(),
-                reader_queue_size[pos]);
-            yield();
-            reader_queue_size[pos] = 0;
-            reader_queue_head[pos] = nullptr;
-            reader_queue_tail[pos] = nullptr;
-          }
+          // if (reader_queue_size[pos] == WORK_BATCH_COUNT)
+          // {
+          //   yield();
+          //   cown->read_ref_count.add_read(reader_queue_size[pos]);
+          //   Logging::cout()
+          //     << this << " Writer loop scheduling readers cown " << cown
+          //     << " read_ref_count " << cown->read_ref_count.count
+          //     << " first reader " << reader_queue_head[pos] << " last reader "
+          //     << reader_queue_tail[pos] << " num readers "
+          //     << reader_queue_size[pos] << " last_slot " << cown->last_slot
+          //     << Logging::endl;
+          //   yield();
+          //   if (reader_queue_head[pos] == reader_queue_tail[pos])
+          //     Scheduler::schedule(
+          //       reader_queue_head[pos]->get_behaviour()->as_work());
+          //   else
+          //     Scheduler::schedule_many(
+          //       reader_queue_head[pos]->get_behaviour()->as_work(),
+          //       reader_queue_tail[pos]->get_behaviour()->as_work(),
+          //       reader_queue_size[pos]);
+          //   yield();
+          //   reader_queue_size[pos] = 0;
+          //   reader_queue_head[pos] = nullptr;
+          //   reader_queue_tail[pos] = nullptr;
+          // }
 
-          if (reader_queue_head[pos] == nullptr)
-          {
-            reader_queue_head[pos] = reader;
-            reader_queue_tail[pos] = reader;
-          }
-          else
-          {
-            yield();
-            reader_queue_tail[pos]
-              ->get_behaviour()
-              ->as_work()
-              ->next_in_queue.store(
-                reader->get_behaviour()->as_work(), std::memory_order_release);
-            reader_queue_tail[pos] = reader;
+          if(next_slot->get_behaviour()->resolve(1, true, false)) {
+            if (reader_queue_head[pos] == nullptr)
+            {
+              reader_queue_head[pos] = reader;
+              reader_queue_tail[pos] = reader;
+            }
+            else
+            {
+              yield();
+              reader_queue_tail[pos]
+                ->get_behaviour()
+                ->as_work()
+                ->next_in_queue.store(
+                  reader->get_behaviour()->as_work(), std::memory_order_release);
+              reader_queue_tail[pos] = reader;
+            }
           }
 
           reader_queue_size[pos]++; // Don't count the first one outside the

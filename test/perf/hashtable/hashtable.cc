@@ -3,12 +3,14 @@
 #include <cpp/when.h>
 #include <debug/harness.h>
 #include <memory>
+#include <map>
 
-#define DEBUG_RW 0
+#define DEBUG_RW 1
 
 using namespace verona::cpp;
 
 long num_buckets = 1;
+long num_dependent_buckets = 1;
 long num_entries_per_bucket = 128;
 long num_operations = 100'000'000;
 long rw_ratio = 90; // X% readers
@@ -55,8 +57,8 @@ std::atomic<long> total_read_cs_time = 0;
 std::atomic<long> total_write_cs_time = 0;
 
 #if DEBUG_RW
-auto stats =
-  std::make_shared<std::array<std::atomic<size_t>, num_buckets * 2>>();
+auto concurrency =
+  std::make_shared<std::array<std::atomic<size_t>, 1024>>();
 #endif
 
 void test_hash_table()
@@ -65,7 +67,7 @@ void test_hash_table()
 
   std::shared_ptr<std::vector<cown_ptr<Bucket>>> buckets =
     std::make_shared<std::vector<cown_ptr<Bucket>>>();
-
+  
   for (size_t i = 0; i < num_buckets; i++)
   {
     std::vector<Entry*> list;
@@ -76,90 +78,52 @@ void test_hash_table()
 
   for (size_t i = 0; i < num_operations; i++)
   {
-    size_t key = rand() % (num_buckets * num_entries_per_bucket * 2);
-    size_t idx = key % num_buckets;
-    if (rand() % rw_ratio_denom < rw_ratio)
+    size_t dependent_buckets = (rand() % num_dependent_buckets) + 1;
+    std::vector<cown_ptr<Bucket>> read_buckets;
+    std::vector<cown_ptr<Bucket>> write_buckets;
+    std::vector<size_t> reader_idx;
+    std::vector<size_t> writer_idx;
+
+    for(size_t j = 0; j < dependent_buckets; j++)
     {
-      when(read((*buckets)[idx])) << [key](acquired_cown<const Bucket> bucket) {
+      size_t key = rand() % (num_buckets * num_entries_per_bucket * 2);
+      size_t idx = key % num_buckets;
+      if(rand() % rw_ratio_denom < rw_ratio) {
+        read_buckets.push_back((*buckets)[idx]);
+        reader_idx.push_back(idx);
+      }
+      else {
+        write_buckets.push_back((*buckets)[idx]);
+        writer_idx.push_back(idx);
+      }
+    }
+    
+    cown_array<Bucket> readers{read_buckets.size() > 0 ? read_buckets.data(): nullptr, read_buckets.size()};
+    cown_array<Bucket> writers{write_buckets.size() > 0 ? write_buckets.data(): nullptr, write_buckets.size()};
+
+    when(read(readers), writers) << [reader_idx, writer_idx] (acquired_cown_span<const Bucket> readers, acquired_cown_span<Bucket> writers) {
+      Logging::cout() << "Num readers: " << readers.length << " Num writers: " << writers.length << Logging::endl;
 #if DEBUG_RW
-        auto val = (*stats)[idx].fetch_add(2);
-        Logging::cout() << "Reader idx:" << idx << " val: " << val
-                        << Logging::endl;
+      for(int i = 0; i < reader_idx.size(); i++) {
+        auto val = (*concurrency)[reader_idx[i]].fetch_add(2);
         check(val % 2 == 0);
-        if ((*stats)[idx + NUM_BUCKETS].load() < (val + 2))
-        {
-          (*stats)[idx + NUM_BUCKETS].store(val + 2);
-          printf("idx: %ld val: %ld\n", idx, val + 2);
-        }
-#endif
-
-        auto t1 = high_resolution_clock::now();
-
-        bool found = false;
-        for (auto it : bucket->list)
-        {
-          if (it->val == key)
-          {
-            found = true;
-            break;
-          }
-        }
-
-        for (volatile int i = 0; i < read_loop_count; i++)
-          Aal::pause();
-
-        if (found)
-          found_read_ops++;
-        else
-          not_found_read_ops++;
-
-        auto t2 = high_resolution_clock::now();
-
-        read_cs_time += duration_cast<nanoseconds>(t2 - t1).count();
-#if DEBUG_RW
-        (*stats)[idx].fetch_sub(2);
-#endif
-      };
-    }
-    else
-    {
-      when((*buckets)[idx]) << [key](acquired_cown<Bucket> bucket) {
-#if DEBUG_RW
-        auto val = (*stats)[idx].fetch_add(1);
-        Logging::cout() << "Writer idx:" << idx << " val: " << val
-                        << Logging::endl;
+      }
+      for(int i = 0; i < reader_idx.size(); i++) {
+        auto val = (*concurrency)[reader_idx[i]].fetch_add(1);
         check(val == 0);
+      }
 #endif
-        auto t1 = high_resolution_clock::now();
 
-        bool found = false;
-        for (auto it : bucket->list)
-        {
-          if (it->val == key)
-          {
-            found = true;
-            break;
-          }
-        }
-
-        for (volatile int i = 0; i < write_loop_count; i++)
+      found_read_ops += readers.length;
+      found_write_ops += writers.length;
+      for (volatile int i = 0; i < read_loop_count * readers.length; i++)
           Aal::pause();
+      for (volatile int i = 0; i < write_loop_count * writers.length; i++)
+          Aal::pause();
+    };
 
-        if (found)
-          found_write_ops++;
-        else
-          not_found_write_ops++;
-
-        auto t2 = high_resolution_clock::now();
-
-        write_cs_time += duration_cast<nanoseconds>(t2 - t1).count();
-#if DEBUG_RW
-        (*stats)[idx].fetch_sub(1);
-#endif
-      };
-    }
-    Logging::cout() << "Index added: " << i << Logging::endl;
   }
+
   auto t2 = high_resolution_clock::now();
   auto ns_int = duration_cast<nanoseconds>(t2 - t1);
   auto us_int = duration_cast<microseconds>(t2 - t1);
@@ -201,12 +165,19 @@ int main(int argc, char** argv)
   opt::Opt opt(argc, argv);
 
   num_buckets = opt.is<size_t>("--num_buckets", 1);
+  num_dependent_buckets = opt.is<size_t>("--num_dependent_buckets", 1);
   num_entries_per_bucket = opt.is<size_t>("--num_entries_per_bucket", 128);
   num_operations = opt.is<size_t>("--num_operations", 100'000'000);
   rw_ratio = opt.is<size_t>("--rw_ratio", 90);
   rw_ratio_denom = opt.is<size_t>("--rw_ratio_denom", 100);
   read_loop_count = opt.is<size_t>("--read_loop_count", 100);
   write_loop_count = opt.is<size_t>("--write_loop_count", 100);
+
+  check(num_dependent_buckets <= num_buckets);
+
+#if DEBUG_RW
+  check(num_buckets <= 1024);
+#endif
 
   SystematicTestHarness harness(argc, argv);
 
@@ -217,11 +188,12 @@ int main(int argc, char** argv)
   auto t2 = high_resolution_clock::now();
 
 #if DEBUG_RW
-  for (int i = 0; i < NUM_BUCKETS; i++)
-    assert((*stats)[i].load() == 0);
+  for (int i = 0; i < num_buckets; i++)
+    check((*concurrency)[i].load() == 0);
 #endif
 
-  std::cout << "Num Buckets: " << num_buckets
+  std::cout << "Num buckets: " << num_buckets
+            << "Num dependent buckets: " << num_dependent_buckets
             << " Num entries per bucket: " << num_entries_per_bucket
             << " Num operations: " << num_operations
             << " Read write ratio readers: " << rw_ratio
