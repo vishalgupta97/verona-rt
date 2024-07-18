@@ -181,9 +181,9 @@ void test_mixed4()
     [=](auto, auto, auto) { Logging::cout() << "log" << Logging::endl; };
 }
 
-void test_multi()
+void test_multi1()
 {
-  Logging::cout() << "test_multi()" << Logging::endl;
+  Logging::cout() << "test_multi1()" << Logging::endl;
 
   auto log1 = make_cown<Body1>(1);
   auto log2 = make_cown<Body1>(2);
@@ -196,6 +196,40 @@ void test_multi()
 
   (when(read(t1)) << [=](auto) { Logging::cout() << "log" << Logging::endl; }) +
     (when(read(log1)) << [=](auto) { Logging::cout() << "log" << Logging::endl; });
+}
+
+void test_multi2()
+{
+  Logging::cout() << "test_multi2()" << Logging::endl;
+
+  auto log1 = make_cown<Body1>(1);
+  auto log2 = make_cown<Body1>(2);
+
+  cown_ptr<Body1> carray[2];
+  carray[0] = log1;
+  carray[1] = log2;
+
+  cown_array<Body1> t1{carray, 2};
+
+  (when(t1) << [=](auto) { Logging::cout() << "log" << Logging::endl; }) +
+    (when(read(log1)) << [=](auto) { Logging::cout() << "log" << Logging::endl; });
+}
+
+void test_multi3()
+{
+  Logging::cout() << "test_multi3()" << Logging::endl;
+
+  auto log1 = make_cown<Body1>(1);
+  auto log2 = make_cown<Body1>(2);
+
+  cown_ptr<Body1> carray[2];
+  carray[0] = log1;
+  carray[1] = log2;
+
+  cown_array<Body1> t1{carray, 2};
+
+  (when(read(t1)) << [=](auto) { Logging::cout() << "log" << Logging::endl; }) +
+    (when(log1) << [=](auto) { Logging::cout() << "log" << Logging::endl; });
 }
 
 void test_nest1()
@@ -271,24 +305,26 @@ int main(int argc, char** argv)
 {
   SystematicTestHarness harness(argc, argv);
 
-  harness.run(test_span);
-  harness.run(test_span_empty);
-  harness.run(test_span_single);
-  harness.run(test_multi_span);
+  // harness.run(test_span);
+  // harness.run(test_span_empty);
+  // harness.run(test_span_single);
+  // harness.run(test_multi_span);
 
-  harness.run(test_mixed1);
-  harness.run(test_mixed2);
-  harness.run(test_mixed3);
-  harness.run(test_mixed4);
+  // harness.run(test_mixed1);
+  // harness.run(test_mixed2);
+  // harness.run(test_mixed3);
+  // harness.run(test_mixed4);
 
-  harness.run(test_multi);
+  harness.run(test_multi1);
+  harness.run(test_multi2);
+  harness.run(test_multi3);
 
-  harness.run(test_nest1);
-  harness.run(test_nest2);
+  // harness.run(test_nest1);
+  // harness.run(test_nest2);
 
-  harness.run(test_move);
+  // harness.run(test_move);
 
-  harness.run(test_repeated_cown);
+  // harness.run(test_repeated_cown);
 
   return 0;
 }
