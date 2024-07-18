@@ -510,6 +510,8 @@ namespace verona::rt
 
         Logging::cout() << "Processing cown " << cown
                         << " Behaviour " << body
+                        << " Behaviour cown count " << body->count
+                        << " Behaviour exec count down " << body->exec_count_down
                         << " Slot " << curr_slot
                         << " Index " << i << Logging::endl;
 

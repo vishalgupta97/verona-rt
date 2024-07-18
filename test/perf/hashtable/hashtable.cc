@@ -108,8 +108,8 @@ void test_hash_table()
         auto val = (*concurrency)[reader_idx[i]].fetch_add(2);
         check(val % 2 == 0);
       }
-      for(int i = 0; i < reader_idx.size(); i++) {
-        auto val = (*concurrency)[reader_idx[i]].fetch_add(1);
+      for(int i = 0; i < writer_idx.size(); i++) {
+        auto val = (*concurrency)[writer_idx[i]].fetch_add(1);
         check(val == 0);
       }
 #endif
