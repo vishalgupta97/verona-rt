@@ -3,7 +3,7 @@
 #include <cpp/when.h>
 #include <debug/harness.h>
 #include <memory>
-#include <map>
+#include <set>
 
 #define DEBUG_RW 1
 
@@ -32,9 +32,9 @@ public:
 class Bucket
 {
 public:
-  std::vector<Entry*> list;
+  std::vector<std::shared_ptr<Entry>> list;
 
-  Bucket(std::vector<Entry*> list) : list(list) {}
+  Bucket(std::vector<std::shared_ptr<Entry>> list1) {}
 
   uint64_t get_addr()
   {
@@ -46,6 +46,7 @@ thread_local long found_read_ops = 0;
 thread_local long not_found_read_ops = 0;
 thread_local long found_write_ops = 0;
 thread_local long not_found_write_ops = 0;
+thread_local long mixed_ops = 0;
 thread_local long read_cs_time = 0;
 thread_local long write_cs_time = 0;
 
@@ -53,6 +54,7 @@ std::atomic<long> total_found_read_ops = 0;
 std::atomic<long> total_not_found_read_ops = 0;
 std::atomic<long> total_found_write_ops = 0;
 std::atomic<long> total_not_found_write_ops = 0;
+std::atomic<long> total_mixed_ops = 0;
 std::atomic<long> total_read_cs_time = 0;
 std::atomic<long> total_write_cs_time = 0;
 
@@ -70,9 +72,9 @@ void test_hash_table()
   
   for (size_t i = 0; i < num_buckets; i++)
   {
-    std::vector<Entry*> list;
+    std::vector<std::shared_ptr<Entry>> list;
     for (size_t j = 0; j < (num_entries_per_bucket); j++)
-      list.push_back(new Entry((num_buckets * j) + i));
+      list.push_back(std::shared_ptr<Entry>(new Entry((num_buckets * j) + i)));
     buckets->push_back(make_cown<Bucket>(list));
   }
 
@@ -81,8 +83,8 @@ void test_hash_table()
     size_t dependent_buckets = (rand() % num_dependent_buckets) + 1;
     std::vector<cown_ptr<Bucket>> read_buckets;
     std::vector<cown_ptr<Bucket>> write_buckets;
-    std::vector<size_t> reader_idx;
-    std::vector<size_t> writer_idx;
+    std::set<size_t> reader_idx;
+    std::set<size_t> writer_idx;
 
     for(size_t j = 0; j < dependent_buckets; j++)
     {
@@ -90,38 +92,68 @@ void test_hash_table()
       size_t idx = key % num_buckets;
       if(rand() % rw_ratio_denom < rw_ratio) {
         read_buckets.push_back((*buckets)[idx]);
-        reader_idx.push_back(idx);
+        reader_idx.insert(idx);
       }
       else {
         write_buckets.push_back((*buckets)[idx]);
-        writer_idx.push_back(idx);
+        writer_idx.insert(idx);
       }
     }
-    
+
+    for (auto writer : writer_idx)
+      reader_idx.erase(writer);
+
     cown_array<Bucket> readers{read_buckets.size() > 0 ? read_buckets.data(): nullptr, read_buckets.size()};
     cown_array<Bucket> writers{write_buckets.size() > 0 ? write_buckets.data(): nullptr, write_buckets.size()};
 
-    when(read(readers), writers) << [reader_idx, writer_idx] (acquired_cown_span<const Bucket> readers, acquired_cown_span<Bucket> writers) {
-      Logging::cout() << "Num readers: " << readers.length << " Num writers: " << writers.length << Logging::endl;
+    when(read(readers), writers) << [reader_idx, writer_idx](
+                                      acquired_cown_span<const Bucket> readers,
+                                      acquired_cown_span<Bucket> writers) {
+      Logging::cout() << "Num readers: " << readers.length
+                      << " Num writers: " << writers.length << Logging::endl;
 #if DEBUG_RW
-      for(int i = 0; i < reader_idx.size(); i++) {
-        auto val = (*concurrency)[reader_idx[i]].fetch_add(2);
+      for (auto reader : reader_idx)
+      {
+        auto val = (*concurrency)[reader].fetch_add(2);
+        Logging::cout() << "Reader_idx " << reader << " rcount " << val
+                        << Logging::endl;
         check(val % 2 == 0);
       }
-      for(int i = 0; i < writer_idx.size(); i++) {
-        auto val = (*concurrency)[writer_idx[i]].fetch_add(1);
+      for (auto writer : writer_idx)
+      {
+        auto val = (*concurrency)[writer].fetch_add(1);
+        Logging::cout() << "Writer_idx " << writer << " rcount " << val
+                        << Logging::endl;
         check(val == 0);
       }
 #endif
 
       found_read_ops += readers.length;
       found_write_ops += writers.length;
-      for (volatile int i = 0; i < read_loop_count * readers.length; i++)
-          Aal::pause();
-      for (volatile int i = 0; i < write_loop_count * writers.length; i++)
-          Aal::pause();
-    };
+      mixed_ops++;
 
+      for (volatile int i = 0; i < read_loop_count * readers.length; i++)
+        Aal::pause();
+      for (volatile int i = 0; i < write_loop_count * writers.length; i++)
+        Aal::pause();
+
+#if DEBUG_RW
+      for (auto reader : reader_idx)
+      {
+        auto val = (*concurrency)[reader].fetch_add(-2);
+        Logging::cout() << "Reader_idx " << reader << " rcount " << val
+                        << Logging::endl;
+        check((val >= 2) && (val % 2 == 0));
+      }
+      for (auto writer : writer_idx)
+      {
+        auto val = (*concurrency)[writer].fetch_add(-1);
+        Logging::cout() << "Writer_idx " << writer << " rcount " << val
+                        << Logging::endl;
+        check(val == 1);
+      }
+#endif
+    };
   }
 
   auto t2 = high_resolution_clock::now();
@@ -149,11 +181,13 @@ void finish(void)
      << " found read ops: " << found_read_ops
      << " not found read ops: " << not_found_read_ops
      << " found write ops: " << found_write_ops
-     << " not found write ops: " << not_found_write_ops << "\n";
+     << " not found write ops: " << not_found_write_ops
+     << " mixed ops: " << mixed_ops << "\n";
   total_found_read_ops.fetch_add(found_read_ops);
   total_not_found_read_ops.fetch_add(not_found_read_ops);
   total_found_write_ops.fetch_add(found_write_ops);
   total_not_found_write_ops.fetch_add(not_found_write_ops);
+  total_mixed_ops.fetch_add(mixed_ops);
 
   total_read_cs_time.fetch_add(read_cs_time);
   total_write_cs_time.fetch_add(write_cs_time);
@@ -193,7 +227,7 @@ int main(int argc, char** argv)
 #endif
 
   std::cout << "Num buckets: " << num_buckets
-            << "Num dependent buckets: " << num_dependent_buckets
+            << " Num dependent buckets: " << num_dependent_buckets
             << " Num entries per bucket: " << num_entries_per_bucket
             << " Num operations: " << num_operations
             << " Read write ratio readers: " << rw_ratio
@@ -201,10 +235,7 @@ int main(int argc, char** argv)
             << " Read loop count: " << read_loop_count
             << " Write loop count: " << write_loop_count << std::endl;
 
-  std::cout << "Total ops: "
-            << (total_found_read_ops.load() + total_found_write_ops.load() +
-                total_not_found_read_ops.load() +
-                total_not_found_write_ops.load())
+  std::cout << "Total ops: " << total_mixed_ops.load()
             << " found read ops: " << total_found_read_ops.load()
             << " not found read ops: " << total_not_found_read_ops.load()
             << " found write ops: " << total_found_write_ops.load()

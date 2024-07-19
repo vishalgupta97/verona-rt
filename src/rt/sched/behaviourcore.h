@@ -267,7 +267,7 @@ namespace verona::rt
      *
      * Returns true if this call makes the count_down_zero
      */
-    bool resolve(size_t n = 1, bool fifo = true, bool schedule = true)
+    bool resolve(size_t n = 1, bool fifo = true)
     {
       Logging::cout() << "Behaviour::resolve " << n << " for behaviour " << this
                       << Logging::endl;
@@ -278,8 +278,7 @@ namespace verona::rt
         (exec_count_down.fetch_sub(n) == n))
       {
         Logging::cout() << "Scheduling Behaviour " << this << Logging::endl;
-        if(schedule)
-          Scheduler::schedule(as_work(), fifo);
+        Scheduler::schedule(as_work(), fifo);
         return true;
       }
 
@@ -476,20 +475,28 @@ namespace verona::rt
       // Sort the indexing array so we make the requests in the correct order
       // across the whole set of behaviours.  A consistent order is required to
       // avoid deadlock.
-      // We sort first by cown, and then by behaviour number.
-      // These means overlaps will be in a sequence in the array in the correct
-      // order with respect to the order of the group of behaviours.
+      // We sort first by cown, then by behaviour number and move writers before
+      // readers. This means overlaps will be in a sequence in the array in the
+      // correct order with respect to the order of the group of behaviours.
       auto compare = [](
                        const std::tuple<size_t, Slot*> i,
                        const std::tuple<size_t, Slot*> j) {
 #ifdef USE_SYSTEMATIC_TESTING
-        return std::get<1>(i)->cown->id() == std::get<1>(j)->cown->id() ?
-          std::get<0>(i) < std::get<0>(j) :
-          std::get<1>(i)->cown->id() < std::get<1>(j)->cown->id();
+        if (std::get<1>(i)->cown->id() == std::get<1>(j)->cown->id())
+          if (std::get<0>(i) == std::get<0>(j))
+            return std::get<1>(j)->is_read_only();
+          else
+            return std::get<0>(i) < std::get<0>(j);
+        else
+          return std::get<1>(i)->cown->id() < std::get<1>(j)->cown->id();
 #else
-        return std::get<1>(i)->cown == std::get<1>(j)->cown ?
-          std::get<0>(i) < std::get<0>(j) :
-          std::get<1>(i)->cown < std::get<1>(j)->cown;
+        if (std::get<1>(i)->cown == std::get<1>(j)->cown)
+          if (std::get<0>(i) == std::get<0>(j))
+            return std::get<1>(j)->is_read_only();
+          else
+            return std::get<0>(i) < std::get<0>(j);
+        else
+          return std::get<1>(i)->cown < std::get<1>(j)->cown;
 #endif
       };
       if (count > 1)
@@ -529,7 +536,7 @@ namespace verona::rt
             transfer_count += std::get<1>(indexes[i])->status;
 
             Logging::cout() << "Duplicate cown " << cown << " for behaviour "
-                            << body << "Index " << i << Logging::endl;
+                            << body << " Index " << i << Logging::endl;
             // We need to reduce the execution count by one, as we can't wait
             // for ourselves.
             ec[std::get<0>(indexes[i])]++;
@@ -809,6 +816,9 @@ namespace verona::rt
       return;
     }
 
+    Logging::cout() << "Release slot " << this << " behaviour "
+                    << get_behaviour() << Logging::endl;
+
     if (is_read_only())
     {
       if (next_slot == nullptr)
@@ -969,24 +979,9 @@ namespace verona::rt
 
       if (next_slot->is_read_only())
       {
-#define NUM_CORES 18 // TODO: Fix this to (number of thread)
-#define WORK_BATCH_COUNT 5
+        std::vector<Slot*> reader_queue;
 
-        std::array<Slot*, NUM_CORES> reader_queue_head;
-        std::array<Slot*, NUM_CORES> reader_queue_tail;
-        std::array<int, NUM_CORES> reader_queue_size;
-        for (int i = 0; i < NUM_CORES; i++)
-        {
-          reader_queue_head[i] = nullptr;
-          reader_queue_tail[i] = nullptr;
-          reader_queue_size[i] = 0;
-        }
-
-        int pos = 0;
-        int index = 0;
-
-        bool first_reader =
-          cown->read_ref_count.add_read(2); // Hold extra rcount
+        bool first_reader = cown->read_ref_count.add_read(1); // Hold rcount
         yield();
         Logging::cout() << this << " Writer waking up next reader cown " << cown
                         << " read_ref_count " << cown->read_ref_count.count
@@ -1000,23 +995,8 @@ namespace verona::rt
         Cown::acquire(cown);
         yield();
         next_slot->blocked = false;
-
-        if (next_slot->is_ready())
-        {
-          yield();
-          while (next_slot->is_ready())
-          {
-            Systematic::yield_until(
-              [this]() { return !(next_slot->is_ready()); });
-            Aal::pause();
-          }
-        }
-        assert(next_slot->is_behaviour());
-        if(next_slot->get_behaviour()->resolve(1, true, false)) {
-          reader_queue_head[pos] = next_slot;
-          reader_queue_tail[pos] = next_slot;
-        } 
-        index++;
+        yield();
+        reader_queue.push_back(next_slot);
 
         auto curr_slot = next_slot;
         while (curr_slot->is_next_slot_read_only())
@@ -1039,7 +1019,15 @@ namespace verona::rt
                           << curr_slot->next_slot << " behaviour "
                           << curr_slot->next_slot->get_behaviour()
                           << Logging::endl;
+          reader_queue.push_back(reader);
           yield();
+          curr_slot = reader;
+        }
+
+        cown->read_ref_count.add_read(reader_queue.size());
+
+        for (auto reader : reader_queue)
+        {
           if (reader->is_ready())
           {
             yield();
@@ -1052,81 +1040,10 @@ namespace verona::rt
           }
           assert(reader->is_behaviour());
 
-          // if (index % WORK_BATCH_COUNT == 0)
-          //   pos = (pos + 1) % NUM_CORES;
-
-          // if (reader_queue_size[pos] == WORK_BATCH_COUNT)
-          // {
-          //   yield();
-          //   cown->read_ref_count.add_read(reader_queue_size[pos]);
-          //   Logging::cout()
-          //     << this << " Writer loop scheduling readers cown " << cown
-          //     << " read_ref_count " << cown->read_ref_count.count
-          //     << " first reader " << reader_queue_head[pos] << " last reader "
-          //     << reader_queue_tail[pos] << " num readers "
-          //     << reader_queue_size[pos] << " last_slot " << cown->last_slot
-          //     << Logging::endl;
-          //   yield();
-          //   if (reader_queue_head[pos] == reader_queue_tail[pos])
-          //     Scheduler::schedule(
-          //       reader_queue_head[pos]->get_behaviour()->as_work());
-          //   else
-          //     Scheduler::schedule_many(
-          //       reader_queue_head[pos]->get_behaviour()->as_work(),
-          //       reader_queue_tail[pos]->get_behaviour()->as_work(),
-          //       reader_queue_size[pos]);
-          //   yield();
-          //   reader_queue_size[pos] = 0;
-          //   reader_queue_head[pos] = nullptr;
-          //   reader_queue_tail[pos] = nullptr;
-          // }
-
-          if(next_slot->get_behaviour()->resolve(1, true, false)) {
-            if (reader_queue_head[pos] == nullptr)
-            {
-              reader_queue_head[pos] = reader;
-              reader_queue_tail[pos] = reader;
-            }
-            else
-            {
-              yield();
-              reader_queue_tail[pos]
-                ->get_behaviour()
-                ->as_work()
-                ->next_in_queue.store(
-                  reader->get_behaviour()->as_work(), std::memory_order_release);
-              reader_queue_tail[pos] = reader;
-            }
-          }
-
-          reader_queue_size[pos]++; // Don't count the first one outside the
-                                    // loop, otherwise rcount will be wrong
-          index++;
-
-          yield();
-          curr_slot = reader;
+          reader->get_behaviour()->resolve(1, false);
         }
 
-        if (reader_queue_size[pos] > 0 || index == 1)
-        {
-          cown->read_ref_count.add_read(reader_queue_size[pos]);
-          Logging::cout() << this << " Writer loop scheduling readers cown "
-                          << cown << " read_ref_count "
-                          << cown->read_ref_count.count << " first reader "
-                          << reader_queue_head[pos] << " last reader "
-                          << reader_queue_tail[pos] << " num readers "
-                          << reader_queue_size[pos] << " last_slot "
-                          << cown->last_slot << Logging::endl;
-          yield();
-          if (reader_queue_head[pos] == reader_queue_tail[pos])
-            Scheduler::schedule(
-              reader_queue_head[pos]->get_behaviour()->as_work());
-          else
-            Scheduler::schedule_many(
-              reader_queue_head[pos]->get_behaviour()->as_work(),
-              reader_queue_tail[pos]->get_behaviour()->as_work(),
-              reader_queue_size[pos]);
-        }
+        yield();
 
         // Release extra rcount when traversal is done
         if (cown->read_ref_count.release_read())
@@ -1167,9 +1084,6 @@ namespace verona::rt
                           << get_behaviour() << Logging::endl;
           shared::release(ThreadAlloc::get(), cown);
         }
-        // cown->read_ref_count.release_read();
-
-        // cown->read_ref_count.add_read(index - 1);
 
         // thread_local long max_next_pending_readers = 0;
         // thread_local long sum_next_pending_readers = 0;
@@ -1186,20 +1100,6 @@ namespace verona::rt
         //     max_next_pending_readers,
         //     (sum_next_pending_readers * 1.0 / count_next_pending_readers),
         //     count_next_pending_readers);
-        // }
-
-        // for (int i = 0; i < NUM_CORES; i++)
-        // {
-        //   if (reader_queue_head[i] == nullptr)
-        //     break;
-
-        //   if (reader_queue_head[i] == reader_queue_tail[i])
-        //     Scheduler::schedule(
-        //       reader_queue_head[i]->get_behaviour()->as_work());
-        //   else
-        //     Scheduler::schedule_many(
-        //       reader_queue_head[i]->get_behaviour()->as_work(),
-        //       reader_queue_tail[i]->get_behaviour()->as_work());
         // }
       }
       else
