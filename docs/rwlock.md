@@ -28,7 +28,6 @@ struct lock {
 };
 
 within_2pl_acquire_phase(cown, curr_slot) {
-    auto curr_slot = last_slot;
     curr_slot->set_behaviour(first_body);
 
     if(curr_slot->is_read_only()) {
@@ -59,7 +58,7 @@ within_2pl_acquire_phase(cown, curr_slot) {
         if(prev_slot == NULL) {
             cown->next_writer = curr_slot;
             Cown::acquire(cown);
-            if(cown->read_ref_count == 0 && XCHG(cown->next_writer, nullptr) == curr_slot) {
+            if(cown->read_ref_count == 0 && XCHG(cown->next_writer, NULL) == curr_slot) {
                 curr_slot->blocked = false;
                 dec_dependency(curr_slot);
             }
@@ -81,11 +80,11 @@ within_release_slot(curr_slot) {
             if(CAS(cown->last_slot, curr_slot, NULL)) {
                 if(cown->read_ref_count.release_read()) {
                     // Last reader
-                    auto w = XCHG(cown->next_writer, NULL);
-                    if(w != nullptr) {
-                        w->blocked = false;
-                        while (w->is_ready());
-                        w->get_behaviour()->resolve();
+                    writer = XCHG(cown->next_writer, NULL);
+                    if(writer != NULL) {
+                        writer->blocked = false;
+                        while (writer->is_ready());
+                        writer->get_behaviour()->resolve();
                     }
                     // Release cown as this will be set by the new thread joining the queue.
                     Cown::release(cown);
@@ -102,40 +101,40 @@ within_release_slot(curr_slot) {
 
         if(cown->read_ref_count.release_read()) {
             // Last reader
-            auto w = cown->next_writer;
-            if(w != NULL && cown->read_ref_count == 0 && CAS(cown->next_writer, w, NULL)) {
-                w->blocked = false;
-                while(w->is_ready());
-                dec_dependency(w);
-            } else {
-                shared::release(ThreadAlloc::get(), cown);
+            writer = cown->next_writer;
+            if(writer != NULL && cown->read_ref_count == 0 && CAS(cown->next_writer, writer, NULL)) {
+                writer->blocked = false;
+                while(writer->is_ready());
+                dec_dependency(writer);
             }
+            Cown::release(cown);
         }
     } else {
         if(curr_slot->next_slot == NULL) {
             if(CAS(cown->last_slot, curr_slot, NULL)) {
-                shared::release(ThreadAlloc::get(), cown);
+                Cown::release(cown);
                 return;
             }
             // If we failed, then the another thread is extending the chain
-            while (curr_slot->next_slot == nullptr);
+            while (curr_slot->next_slot == NULL);
         }
 
-        std::vector<Slot*> next_pending_readers;
         if(curr_slot->next_slot->is_read_only()) {
+            std::vector<Slot*> next_pending_readers;
             cown->read_ref_count.atomic_inc();
+            Cown::acquire(cown); // For first reader
             next_pending_readers.push_back(next_slot);
 
-            auto curr_slot = next_slot;
+            curr_slot = next_slot;
             while(curr_slot->is_next_slot_read_only()) {
                 while (curr_slot->next_slot == NULL); 
                 cown->read_ref_count.add_read();
+                curr_slot->next_slot->blocked = false;
                 next_pending_readers.push_back(curr_slot->next_slot);
                 curr_slot = curr_slot->next_slot;
             }
 
-            for(auto reader: next_pending_readers) {
-                reader->blocked = false;
+            for(reader: next_pending_readers) {
                 while(reader->is_ready()); 
                 dec_dependency(reader);
             }
