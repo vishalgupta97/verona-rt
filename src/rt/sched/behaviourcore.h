@@ -589,7 +589,6 @@ namespace verona::rt
                 Cown::release(ThreadAlloc::get(), cown);
             }
             else
-
             {
               Logging::cout() << "Acquiring reader reference count for first "
                                  "in queue on cown "
@@ -686,7 +685,6 @@ namespace verona::rt
             cown->next_writer = curr_slot;
             yield();
             if (transfer_count)
-
             {
               Logging::cout()
                 << "Releasing writer transferred count " << transfer_count
@@ -697,7 +695,6 @@ namespace verona::rt
                 Cown::release(ThreadAlloc::get(), cown);
             }
             else
-
             {
               Logging::cout() << "Acquiring writer reference count on cown "
                               << cown << Logging::endl;

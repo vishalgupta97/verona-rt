@@ -27,11 +27,23 @@ struct lock {
     struct slot next_writer;
 };
 
+spin_lock(cown) {
+    while(CAS(cown.lock, false, true) != false);
+}
+
+spin_unlock(cown) {
+    cown.lock = false;
+}
+
 within_2pl_acquire_phase(cown, curr_slot) {
     curr_slot->set_behaviour(first_body);
 
     if(curr_slot->is_read_only()) {
-        prev_slot = XCHG(cown->last_slot, curr_slot);
+        spin_lock(cown);
+        prev_slot = cown->last_slot;
+        cown->last_slot = curr_slot;
+        cown->reader_phase_counter++;
+        spin_unlock(cown);
         if(prev_slot == NULL) {
             first_reader = cown->read_ref_count.atomic_inc();
             curr_slot->blocked = false;
@@ -54,17 +66,24 @@ within_2pl_acquire_phase(cown, curr_slot) {
             }
         }
     } else {
-        prev_slot = XCHG(cown->last_slot, curr_slot);
+        spin_lock(cown);
+        prev_slot cown->last_slot;
+        cown->last_slot = curr_slot;
+        curr_slot->reader_phase_counter = cown->reader_phase_counter;
+        cown->reader_phase_counter = 0;
+        spin_unlock(cown);
         if(prev_slot == NULL) {
             cown->next_writer = curr_slot;
             Cown::acquire(cown);
-            if(cown->read_ref_count == 0 && XCHG(cown->next_writer, NULL) == curr_slot) {
+            if(cown->read_ref_count == 0 && CAS(cown->next_writer, curr_slot, NULL) == curr_slot) {
                 curr_slot->blocked = false;
                 dec_dependency(curr_slot);
             }
         } else {
             prev_slot->set_next_slot_writer();
+            CAS(cown->next_writer, NULL, curr_slot);
             prev_slot->set_next_slot(curr_slot);
+            curr_slot->set_prev_slot(prev_slot);
         }
     }
 }

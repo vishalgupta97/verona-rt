@@ -5,7 +5,7 @@
 #include <memory>
 #include <set>
 
-#define DEBUG_RW 1
+#define DEBUG_RW 0
 
 using namespace verona::cpp;
 
