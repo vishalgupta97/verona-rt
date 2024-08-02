@@ -185,11 +185,11 @@ namespace verona::rt
       return nonlocal;
     }
 
-    static void schedule(Work* w)
+    static void schedule(Work* w, bool fifo = true)
     {
       auto* t = local();
 
-      if (t != nullptr)
+      if (t != nullptr && fifo)
       {
         t->schedule_fifo(w);
         return;
@@ -197,6 +197,12 @@ namespace verona::rt
 
       auto* core = round_robin();
       T::schedule_lifo(core, w);
+    }
+
+    static void schedule_many(Work* begin, Work* end, long size)
+    {
+      auto* core = round_robin();
+      T::schedule_many_lifo(core, begin, end, size);
     }
 
     void init(size_t count)
@@ -219,6 +225,38 @@ namespace verona::rt
       {
         T* t = new T;
         t->systematic_id = count;
+#ifdef USE_SYSTEMATIC_TESTING
+        t->local_systematic =
+          Systematic::create_systematic_thread(t->systematic_id);
+#endif
+        threads.add_free(t);
+      }
+      Logging::cout() << "Runtime initialised" << Logging::endl;
+      init_barrier();
+    }
+
+    template<typename EndF>
+    void init(size_t count, EndF run_at_termination)
+    {
+      Logging::cout() << "Init runtime" << Logging::endl;
+
+      if ((thread_count != 0) || (count == 0))
+        abort();
+
+      thread_count = count;
+      teardown_in_progress = false;
+
+      // Initialize the corepool.
+      core_pool.init(count);
+
+      // For future ids.
+      systematic_ids = count + 1;
+
+      for (; count > 0; count--)
+      {
+        T* t = new T;
+        t->systematic_id = count;
+        t->run_at_termination = run_at_termination;
 #ifdef USE_SYSTEMATIC_TESTING
         t->local_systematic =
           Systematic::create_systematic_thread(t->systematic_id);

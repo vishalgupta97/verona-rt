@@ -354,6 +354,7 @@ namespace verona::cpp
   template<typename T>
   cown_ptr<const T> read(cown_ptr<T> cown)
   {
+    Logging::cout() <<  "Read returning const ptr" << Logging::endl;
     return cown;
   }
 

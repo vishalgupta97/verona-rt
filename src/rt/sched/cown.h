@@ -47,42 +47,35 @@ namespace verona::rt
 
   struct ReadRefCount
   {
+  private:
     std::atomic<size_t> count{0};
 
-    void add_read()
+  public:
+    // true means first reader is added, false otherwise
+    bool add_read(int readers = 1)
     {
-      count.fetch_add(2);
+      return count.fetch_add(readers * 2, std::memory_order_release) == 0;
     }
 
-    // true means last reader and writer is waiting, false otherwise
+    bool any_reader()
+    {
+      return count.load(std::memory_order_acquire) != 0;
+    }
+
+    // true means last reader is waiting, false otherwise
     bool release_read()
     {
-      if (count.fetch_sub(2) == 3)
+      if (count.fetch_sub(2, std::memory_order_release) == 2)
       {
         Systematic::yield();
-        assert(count.load() == 1);
-        count.store(0, std::memory_order_relaxed);
         return true;
       }
       return false;
     }
 
-    bool try_write()
+    size_t get_count()
     {
-      if (count.load(std::memory_order_acquire) == 0)
-        return true;
-
-      // Mark a pending write
-      if (count.fetch_add(1) != 0)
-        return false;
-
-      // if in the time between reading and writing the ref count, it
-      // became zero, we can now process the write, so clear the flag
-      // and continue
-      count.fetch_sub(1);
-      Systematic::yield();
-      assert(count.load() == 0);
-      return true;
+      return count.load(std::memory_order_acquire);
     }
   };
 
@@ -103,16 +96,39 @@ namespace verona::rt
     template<typename T>
     friend class Noticeboard;
 
+    /**
+     * MCS Queue having both readers and writers
+     */
     std::atomic<Slot*> last_slot{nullptr};
+
+    /**
+     * Next writer in the queue
+     * TODO: Check if this can be made behaviour*
+     * Currently when last reader releases it resources,
+     * it has to wait for 2PL to complete before scheduling writer
+     * and that information is in Slot.
+     */
+    std::atomic<Slot*> next_writer{nullptr};
 
     /*
      * Cown's read ref count.
      * Bottom bit is used to signal a waiting write.
      * Remaining bits are the count.
+     *
+     * Currently it is only used by readers.
      */
     ReadRefCount read_ref_count;
 
   public:
+    inline std::ostream& operator<<(std::ostream& os)
+    {
+      return os << " Cown: " << this
+                << " Last slot: " << last_slot.load(std::memory_order_relaxed)
+                << " Next writer: "
+                << next_writer.load(std::memory_order_relaxed)
+                << " Reader count: " << read_ref_count.get_count() << " ";
+    }
+
 #ifdef USE_SYSTEMATIC_TESTING_WEAK_NOTICEBOARDS
     std::vector<BaseNoticeboard*> noticeboards;
 

@@ -14,6 +14,8 @@
 
 #include <snmalloc/snmalloc.h>
 
+#define STEALING 1
+
 namespace verona::rt
 {
   /**
@@ -68,6 +70,8 @@ namespace verona::rt
     SchedulerThread* prev = nullptr;
     SchedulerThread* next = nullptr;
 
+    void (*run_at_termination)(void) = nullptr;
+
     SchedulerThread()
     {
       Logging::cout() << "Scheduler Thread created" << Logging::endl;
@@ -107,6 +111,17 @@ namespace verona::rt
                       << Logging::endl;
 
       c->stats.lifo();
+
+      if (Scheduler::get().unpause())
+        c->stats.unpause();
+    }
+
+    static inline void
+    schedule_many_lifo(Core* c, Work* begin, Work* end, long size)
+    {
+      c->q.enqueue_range_front(begin, end);
+
+      c->stats.lifo_many(size);
 
       if (Scheduler::get().unpause())
         c->stats.unpause();
@@ -223,6 +238,8 @@ namespace verona::rt
       }
 
       Systematic::finished_thread();
+      if (run_at_termination)
+        run_at_termination();
 
       // Reset the local thread pointer as this physical thread could be reused
       // for a different SchedulerThread later.
@@ -232,6 +249,7 @@ namespace verona::rt
     Work* try_steal()
     {
       Work* work = nullptr;
+#if STEALING
       // Try to steal from the victim thread.
       if (victim != core)
       {
@@ -239,7 +257,7 @@ namespace verona::rt
 
         if (work != nullptr)
         {
-          // stats.steal();
+          core->stats.steal();
           Logging::cout() << "Fast-steal work " << work << " from "
                           << victim->affinity << Logging::endl;
         }
@@ -247,6 +265,7 @@ namespace verona::rt
 
       // Move to the next victim thread.
       victim = victim->next;
+#endif
 
       return work;
     }
@@ -266,6 +285,7 @@ namespace verona::rt
         if (work != nullptr)
           return work;
 
+#if STEALING
         // Try to steal from the victim thread.
         if (victim != core)
         {
@@ -282,6 +302,7 @@ namespace verona::rt
 
         // We were unable to steal, move to the next victim thread.
         victim = victim->next;
+#endif
 
 #ifdef USE_SYSTEMATIC_TESTING
         // Only try to pause with 1/(2^5) probability

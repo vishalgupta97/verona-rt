@@ -98,6 +98,19 @@ namespace verona::rt
       std::atomic_thread_fence(std::memory_order_seq_cst);
     }
 
+    void enqueue_range_front(T* node_start, T* node_end)
+    {
+      auto cmp = front.read();
+
+      do
+      {
+        node_end->next_in_queue.store(cmp.ptr(), std::memory_order_relaxed);
+      } while (!cmp.store_conditional(node_start));
+      // TODO: Add this into the ABA protection.
+      // Requires snmalloc PR to add store_conditional to take a memory_order.
+      std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
+
     /**
      * Take an element from the queue.
      * This may spuriosly fail and surrounding code should be prepared for that.
