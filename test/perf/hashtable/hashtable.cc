@@ -21,7 +21,7 @@
  * single writer is running at a given point in time.
  */
 
-#define DEBUG_RW 0
+#define DEBUG_RW 1
 
 using namespace verona::cpp;
 

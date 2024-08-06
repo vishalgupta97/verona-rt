@@ -120,13 +120,13 @@ namespace verona::rt
     ReadRefCount read_ref_count;
 
   public:
-    inline std::ostream& operator<<(std::ostream& os)
+    inline friend Logging::SysLog& operator<<(Logging::SysLog& os, Cown& c)
     {
-      return os << " Cown: " << this
-                << " Last slot: " << last_slot.load(std::memory_order_relaxed)
+      return os << " Cown: " << &c
+                << " Last slot: " << c.last_slot.load(std::memory_order_relaxed)
                 << " Next writer: "
-                << next_writer.load(std::memory_order_relaxed)
-                << " Reader count: " << read_ref_count.get_count() << " ";
+                << c.next_writer.load(std::memory_order_relaxed)
+                << " Reader count: " << c.read_ref_count.get_count() << " ";
     }
 
 #ifdef USE_SYSTEMATIC_TESTING_WEAK_NOTICEBOARDS
