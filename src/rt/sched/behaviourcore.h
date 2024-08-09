@@ -63,8 +63,6 @@ namespace verona::rt
 
   struct BehaviourCore;
 
-  // class SysLog;
-
   inline Logging::SysLog& operator<<(Logging::SysLog&, BehaviourCore&);
 
   struct Slot
@@ -138,8 +136,9 @@ namespace verona::rt
 
     /**
      * Points to the behaviour associated with this slot.
-     * TODO: Change this to use snmalloc start address if snmalloc otherwise use
-     * this pointer.
+     * This pointer is set only for reader slots.
+     * TODO: Change this to get behaviour address from start of allocation if snmalloc is used
+     * otherwise use this pointer.
      */
     std::atomic<BehaviourCore*> behaviour;
 
@@ -152,12 +151,18 @@ namespace verona::rt
       behaviour.store(nullptr, std::memory_order_release);
     }
 
+    /**
+     * Returns true if the slot is acquired in read mode
+     */
     bool is_read_only()
     {
       return ((_cown.load(std::memory_order_acquire) >> CURR_SLOT_TYPE_SHIFT) &
               CURR_SLOT_TYPE_BITS) == CURR_SLOT_READER_FLAG;
     }
 
+    /**
+     * Mark the slot to be acquired in read mode
+     */
     void set_read_only()
     {
       _cown.store(
@@ -166,18 +171,36 @@ namespace verona::rt
         std::memory_order_release);
     }
 
+    /**
+     * Returns true if the next slot wants to acquire in read mode
+     */
     bool is_next_slot_read_only()
     {
       return ((status.load(std::memory_order_acquire) >> NEXT_SLOT_TYPE_SHIFT) &
               NEXT_SLOT_TYPE_BITS) == NEXT_SLOT_READER_FLAG;
     }
 
+    /**
+     * Returns true if the next slot wants to acquire in write mode
+     */
     bool is_next_slot_writer()
     {
       return ((status.load(std::memory_order_acquire) >> NEXT_SLOT_TYPE_SHIFT) &
               NEXT_SLOT_TYPE_BITS) == NEXT_SLOT_WRITER_FLAG;
     }
 
+    /**
+     * Returns true if all the slots in a behaviour haven't finished their acquire phase
+     */
+    bool is_wait_2pl()
+    {
+      return ((_cown.load(std::memory_order_acquire) >> STATUS_SHIFT) &
+              STATUS_BITS) == WAIT_FLAG;
+    }
+
+    /**
+     * Mark the slot as ready to signify that its acquire phase is complete
+     */
     void set_ready()
     {
       _cown.store(
@@ -185,14 +208,13 @@ namespace verona::rt
         std::memory_order_release);
     }
 
-    bool is_wait_2pl()
-    {
-      return ((_cown.load(std::memory_order_acquire) >> STATUS_SHIFT) &
-              STATUS_BITS) == WAIT_FLAG;
-    }
-
+    /**
+     * Mark the reader slot as active i.e. the behaviour is scheduled.
+     * Next reader in the queue can also be scheduled.
+     */
     void set_active()
     {
+      assert(is_read_only());
       while (true)
       {
         uintptr_t old_status_val = status.load(std::memory_order_acquire);
@@ -204,6 +226,9 @@ namespace verona::rt
       }
     }
 
+    /**
+     * Get the behaviour associated with the read-only slot
+     */
     BehaviourCore* get_behaviour()
     {
       assert(is_read_only());
@@ -211,12 +236,18 @@ namespace verona::rt
       return behaviour.load(std::memory_order_acquire);
     }
 
+    /**
+     * Set the behaviour associated with the read-only slot
+     */
     void set_behaviour(BehaviourCore* b)
     {
       assert(is_read_only());
       behaviour.store(b, std::memory_order_release);
     }
 
+    /**
+     * Return the next slot
+     */
     Slot* next_slot()
     {
       return (
@@ -224,8 +255,8 @@ namespace verona::rt
     }
 
     /**
-     * Returns true if current slot is a writer or a blocked reader, otherwise
-     * returns false
+     * Returns true if current slot is a writer or a blocked reader, 
+     * otherwise returns false
      */
     bool set_next_slot_reader(Slot* n)
     {
@@ -259,6 +290,10 @@ namespace verona::rt
       }
     }
 
+    /**
+     * Returns the next behaviour. 
+     * True only if the next one in the queue is a writer.
+     */
     BehaviourCore* next_behaviour()
     {
       assert(is_next_slot_writer());
@@ -266,6 +301,9 @@ namespace verona::rt
         BehaviourCore*)((status.load(std::memory_order_acquire) >> NEXT_POINTER_SHIFT) << NEXT_POINTER_SHIFT);
     }
 
+    /**
+     * Set the next behaviour
+     */
     void set_next_slot_writer(BehaviourCore* b)
     {
       assert(((uintptr_t)b & NEXT_POINTER_SHIFT) == 0);
@@ -274,12 +312,18 @@ namespace verona::rt
         std::memory_order_release);
     }
 
+    /**
+     * Returns the cown associated with the slot
+     */
     Cown* cown()
     {
       return (
         Cown*)((_cown.load(std::memory_order_acquire) >> COWN_SHIFT) << COWN_SHIFT);
     }
 
+    /**
+     * Set the cown pointer to NULL to indicate duplicate cowns within a behaviour.
+     */
     void set_cown_null()
     {
       _cown.store(0UL, std::memory_order_release);
@@ -287,28 +331,40 @@ namespace verona::rt
 
     void release();
 
+    /**
+     * Returns true if the slot is acquired with std::move
+     */
     bool is_move()
     {
       assert(status.load(std::memory_order_relaxed) <= 1);
       return status.load(std::memory_order_acquire) == 1;
     }
 
+    /**
+     * Mark the slot to be acquired with std::move
+     */
     void set_move()
     {
       status.store(1, std::memory_order_release);
     }
 
-    void reset_status() // Slot is now used for scheduling
+    /**
+     * Mark the slot to be used for scheduling.
+     */
+    void reset_status()
     {
       status.store(SLOT_BLOCKED_FLAG, std::memory_order_release);
     }
 
+    /**
+     * Reset the status of this slot so that it can be rescheduled.
+     */
     void reset()
     {
       status.store(SLOT_BLOCKED_FLAG, std::memory_order_release);
       _cown.store(
         _cown.load(std::memory_order_acquire) |
-          (SLOT_BLOCKED_FLAG << STATUS_SHIFT),
+          (WAIT_FLAG << SLOT_ACTIVE_SHIFT),
         std::memory_order_release);
     }
 
@@ -689,6 +745,7 @@ namespace verona::rt
           }
         }
 
+        // Mark the slot as ready for scheduling
         curr_slot->reset_status();
         yield();
 
@@ -731,7 +788,7 @@ namespace verona::rt
             if (first_reader)
             {
               Logging::cout()
-                << "Acquiring reference count for first reader on cown "
+                << "Acquiring reference count for the first reader on cown "
                 << *curr_slot << Logging::endl;
               Cown::acquire(cown);
             }
@@ -754,7 +811,7 @@ namespace verona::rt
             if (prev_slot->set_next_slot_reader(curr_slot))
             {
               Logging::cout()
-                << " Previous slot is a writer or pending reader cown "
+                << " Previous slot is a writer or blocked reader cown "
                 << *curr_slot << " previous " << *prev_slot << Logging::endl;
               yield();
               continue;
@@ -819,7 +876,7 @@ namespace verona::rt
               yield();
               continue;
             }
-            Logging::cout() << " Writer waiting for previous reader cown "
+            Logging::cout() << " Writer waiting for previous readers cown "
                             << *curr_slot << Logging::endl;
           }
           else
@@ -1038,14 +1095,7 @@ namespace verona::rt
         while (curr_slot->is_next_slot_read_only())
         {
           yield();
-          // TODO: Check if this is needed. When is_read_only_flag is set,
-          // next_slot_will already be set.
-          while (curr_slot->next_slot() == nullptr)
-          {
-            Systematic::yield_until(
-              [curr_slot]() { return (curr_slot->next_slot() != nullptr); });
-            Aal::pause();
-          }
+          assert(curr_slot->next_slot() != nullptr);
           auto reader = curr_slot->next_slot();
           yield();
           reader->set_active();
@@ -1057,8 +1107,9 @@ namespace verona::rt
           curr_slot = reader;
         }
 
+        // Add read count for readers. First reader is already added in rcount
         cown()->read_ref_count.add_read(
-          reader_queue.size() - 1); // First reader is already added in rcount
+          reader_queue.size() - 1);
 
         yield();
 
@@ -1072,7 +1123,6 @@ namespace verona::rt
         Logging::cout() << *this
                         << " Writer waking up next writer cown next slot "
                         << *next_behaviour() << Logging::endl;
-        // Writer waking up next writer cown
         next_behaviour()->resolve();
       }
     }
