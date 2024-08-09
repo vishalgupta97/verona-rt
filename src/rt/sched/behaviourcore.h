@@ -141,7 +141,7 @@ namespace verona::rt
      * TODO: Change this to use snmalloc start address if snmalloc otherwise use
      * this pointer.
      */
-    BehaviourCore* behaviour;
+    std::atomic<BehaviourCore*> behaviour;
 
   public:
     Slot(Cown* __cown)
@@ -149,6 +149,7 @@ namespace verona::rt
       assert(((uintptr_t)__cown & COWN_SHIFT) == 0);
       _cown.store((uintptr_t)__cown, std::memory_order_release);
       status.store(0, std::memory_order_release);
+      behaviour.store(nullptr, std::memory_order_release);
     }
 
     bool is_read_only()
@@ -215,12 +216,15 @@ namespace verona::rt
 
     BehaviourCore* get_behaviour()
     {
-      return behaviour;
+      assert(is_read_only());
+      assert(behaviour.load(std::memory_order_acquire) != nullptr);
+      return behaviour.load(std::memory_order_acquire);
     }
 
     void set_behaviour(BehaviourCore* b)
     {
-      behaviour = b;
+      assert(is_read_only());
+      behaviour.store(b, std::memory_order_release);
     }
 
     Slot* next_slot()
@@ -236,6 +240,7 @@ namespace verona::rt
      */
     bool set_next_slot_reader(Slot* n)
     {
+      assert(((uintptr_t)n & NEXT_POINTER_SHIFT) == 0);
       if(is_read_only()) {
         while (true)
         {
@@ -243,7 +248,7 @@ namespace verona::rt
           uintptr_t old_status_val = status.load(std::memory_order_acquire);
           uintptr_t new_status_val = old_status_val | ((uintptr_t)n) |
             (NEXT_SLOT_READER_FLAG << NEXT_SLOT_TYPE_SHIFT);
-          Logging::cout() << "slot " << this
+          Logging::cout() << "prev slot reader curr reader " << this
                           << "old_status_val: " << old_status_val
                           << " new_status_val: " << new_status_val
                           << Logging::endl;
@@ -259,17 +264,39 @@ namespace verona::rt
           }
         }
       } else {
-        
+        while (true)
+        {
+          assert(next_slot() == nullptr);
+          uintptr_t old_status_val = status.load(std::memory_order_acquire);
+          uintptr_t new_status_val = old_status_val | ((uintptr_t)n) |
+            (NEXT_SLOT_READER_FLAG << NEXT_SLOT_TYPE_SHIFT);
+          Logging::cout() << "prev slot writer curr reader " << this
+                          << "old_status_val: " << old_status_val
+                          << " new_status_val: " << new_status_val
+                          << Logging::endl;
+          if (status.compare_exchange_strong(
+                old_status_val, new_status_val, std::memory_order_acq_rel))
+            return true;
+        }
       }
     }
 
-    void set_next_slot_writer(Slot* n)
+    BehaviourCore* next_behaviour()
     {
+      assert(is_next_slot_writer());
+      return (
+        BehaviourCore*)((status.load(std::memory_order_acquire) >> NEXT_POINTER_SHIFT)
+               << NEXT_POINTER_SHIFT);
+    }
+
+    void set_next_slot_writer(BehaviourCore* b)
+    {
+      assert(((uintptr_t)b & NEXT_POINTER_SHIFT) == 0);
       while (true)
       {
         assert(next_slot() == nullptr);
         uintptr_t old_status_val = status.load(std::memory_order_acquire);
-        uintptr_t new_status_val = old_status_val | ((uintptr_t)n);
+        uintptr_t new_status_val = old_status_val | ((uintptr_t)b);
         if (status.compare_exchange_strong(
               old_status_val, new_status_val, std::memory_order_acq_rel))
           break;
@@ -288,7 +315,7 @@ namespace verona::rt
       {
         uintptr_t old_cown_val = _cown.load(std::memory_order_acquire);
         uintptr_t new_cown_val =
-          ((uintptr_t)c) | (old_cown_val & ~(COWN_SHIFT));
+          ((uintptr_t)c) | (old_cown_val & ((1L << COWN_SHIFT) - 1));
         if (_cown.compare_exchange_strong(
               old_cown_val, new_cown_val, std::memory_order_acq_rel))
           break;
@@ -348,7 +375,7 @@ namespace verona::rt
         << " Is_next_reader: "
         << ((s.status.load(std::memory_order_relaxed) >> NEXT_SLOT_TYPE_SHIFT) &
             NEXT_SLOT_TYPE_BITS)
-        << " behaviour: " << *(s.get_behaviour()) << "\n";
+        << "\n";
     }
   };
 
@@ -670,7 +697,7 @@ namespace verona::rt
         // I.e. how many moves of cown_refs there were.
         size_t transfer_count = curr_slot->is_move();
 
-        Logging::cout() << "Processing " << cown << body << curr_slot
+        Logging::cout() << "Processing " << cown << " " << body << " " << curr_slot
                         << " Index " << i << Logging::endl;
 
         // Detect duplicates for this cown.
@@ -706,11 +733,11 @@ namespace verona::rt
 
         curr_slot->reset_status();
         yield();
-        curr_slot->set_behaviour(body);
-        yield();
 
         if (curr_slot->is_read_only())
         {
+          curr_slot->set_behaviour(body);
+          yield();
           auto prev_slot =
             cown->last_slot.exchange(curr_slot, std::memory_order_acq_rel);
           yield();
@@ -758,9 +785,15 @@ namespace verona::rt
             yield();
             Logging::cout() << " Someone in queue cown " << *curr_slot
                             << " previous " << *prev_slot << Logging::endl;
-            if (
-              !prev_slot->is_read_only() ||
-              prev_slot->set_next_slot_reader(curr_slot))
+
+            while (prev_slot->is_wait_2pl())
+            {
+              Systematic::yield_until(
+                [prev_slot]() { return !prev_slot->is_wait_2pl(); });
+              Aal::pause();
+            }
+        
+            if (prev_slot->set_next_slot_reader(curr_slot))
             {
               Logging::cout()
                 << " Previous slot is a writer or pending reader cown "
@@ -795,7 +828,7 @@ namespace verona::rt
           yield();
           if (prev_slot == nullptr)
           {
-            cown->next_writer.store(curr_slot, std::memory_order_release);
+            cown->next_writer.store(body, std::memory_order_release);
             yield();
             if (transfer_count)
             {
@@ -819,7 +852,7 @@ namespace verona::rt
             if (
               !cown->read_ref_count.any_reader() &&
               cown->next_writer.exchange(nullptr, std::memory_order_acq_rel) ==
-                curr_slot)
+                body)
             {
               yield();
               Logging::cout() << " Writer at head of queue and got the cown "
@@ -833,9 +866,15 @@ namespace verona::rt
           }
           else
           {
+            while (prev_slot->is_wait_2pl())
+            {
+              Systematic::yield_until(
+                [prev_slot]() { return !prev_slot->is_wait_2pl(); });
+              Aal::pause();
+            }
             Logging::cout()
               << " Writer waiting for cown " << *curr_slot << Logging::endl;
-            prev_slot->set_next_slot_writer(curr_slot);
+            prev_slot->set_next_slot_writer(body);
             Logging::cout()
               << " Writer Set next of previous slot cown " << *curr_slot
               << " previous " << *prev_slot << Logging::endl;
@@ -936,17 +975,7 @@ namespace verona::rt
               Logging::cout()
                 << *this << " Last Reader waking up next writer cown "
                 << " writer " << *w << Logging::endl;
-              w->set_active();
-              if (w->is_wait_2pl()) // 2PL
-              {
-                yield();
-                while (w->is_wait_2pl())
-                {
-                  Systematic::yield_until([w]() { return !(w->is_wait_2pl()); });
-                  Aal::pause();
-                }
-              }
-              w->get_behaviour()->resolve();
+              w->resolve();
             }
             yield();
 
@@ -976,8 +1005,10 @@ namespace verona::rt
         }
       }
 
-      if (is_next_slot_writer())
-        cown()->next_writer = next_slot();
+      if (is_next_slot_writer()) {
+        Logging::cout() << *this << "Reader setting next writer variable " << next_behaviour() << Logging::endl;
+        cown()->next_writer = next_behaviour();
+      }
 
       Logging::cout() << *this << " Reader releasing the cown "
                       << Logging::endl;
@@ -994,17 +1025,7 @@ namespace verona::rt
         {
           Logging::cout() << *this << " Last Reader waking up next writer "
                           << *w << Logging::endl;
-          w->set_active();
-          if (w->is_wait_2pl()) // 2PL
-          {
-            yield();
-            while (w->is_wait_2pl())
-            {
-              Systematic::yield_until([w]() { return !(w->is_wait_2pl()); });
-              Aal::pause();
-            }
-          }
-          w->get_behaviour()->resolve();
+          w->resolve();
         }
 
         Logging::cout() << *this << " Last reader releasing cown "
@@ -1014,7 +1035,7 @@ namespace verona::rt
     }
     else
     {
-      if (next_slot() == NULL)
+      if (next_slot() == nullptr)
       {
         auto slot_addr = this;
         if (cown()->last_slot.compare_exchange_strong(
@@ -1083,17 +1104,6 @@ namespace verona::rt
 
         for (auto reader : reader_queue)
         {
-          if (reader->is_wait_2pl())
-          {
-            yield();
-            while (reader->is_wait_2pl())
-            {
-              Systematic::yield_until([reader]() {
-                return !(reader->is_wait_2pl());
-              });
-              Aal::pause();
-            }
-          }
           reader->get_behaviour()->resolve(1, false);
         }
       }
@@ -1101,20 +1111,9 @@ namespace verona::rt
       {
         Logging::cout() << *this
                         << " Writer waking up next writer cown next slot "
-                        << *next_slot() << Logging::endl;
+                        << *next_behaviour() << Logging::endl;
         // Writer waking up next writer cown
-        next_slot()->set_active();
-        yield();
-        if (next_slot()->is_wait_2pl())
-        {
-          while (next_slot()->is_wait_2pl())
-          {
-            Systematic::yield_until(
-              [this]() { return !(next_slot()->is_wait_2pl()); });
-            Aal::pause();
-          }
-        }
-        next_slot()->get_behaviour()->resolve();
+        next_behaviour()->resolve();
       }
     }
   }

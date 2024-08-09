@@ -80,6 +80,7 @@ namespace verona::rt
   };
 
   struct Slot;
+  struct BehaviourCore;
 
   class Cown : public Shared
   {
@@ -103,12 +104,8 @@ namespace verona::rt
 
     /**
      * Next writer in the queue
-     * TODO: Check if this can be made behaviour*
-     * Currently when last reader releases it resources,
-     * it has to wait for 2PL to complete before scheduling writer
-     * and that information is in Slot.
      */
-    std::atomic<Slot*> next_writer{nullptr};
+    std::atomic<BehaviourCore*> next_writer{nullptr};
 
     /*
      * Cown's read ref count.
