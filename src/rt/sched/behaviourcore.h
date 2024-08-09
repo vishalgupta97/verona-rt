@@ -160,15 +160,8 @@ namespace verona::rt
 
     void set_read_only()
     {
-      while (true)
-      {
-        uintptr_t old_cown_val = _cown.load(std::memory_order_acquire);
-        uintptr_t new_cown_val =
-          old_cown_val | (CURR_SLOT_READER_FLAG << CURR_SLOT_TYPE_SHIFT);
-        if (_cown.compare_exchange_strong(
-              old_cown_val, new_cown_val, std::memory_order_acq_rel))
-          break;
-      }
+       _cown.store(_cown.load(std::memory_order_acquire) 
+              | (CURR_SLOT_READER_FLAG << CURR_SLOT_TYPE_SHIFT) , std::memory_order_release);
     }
 
     bool is_next_slot_read_only()
@@ -185,14 +178,8 @@ namespace verona::rt
 
     void set_ready()
     {
-      while (true)
-      {
-        uintptr_t old_cown_val = _cown.load(std::memory_order_acquire);
-        uintptr_t new_cown_val = old_cown_val | (READY_FLAG << STATUS_SHIFT);
-        if (_cown.compare_exchange_strong(
-              old_cown_val, new_cown_val, std::memory_order_acq_rel))
-          break;
-      }
+      _cown.store(_cown.load(std::memory_order_acquire) 
+              | (READY_FLAG << STATUS_SHIFT) , std::memory_order_release);
     }
 
     bool is_wait_2pl()
@@ -241,44 +228,31 @@ namespace verona::rt
     bool set_next_slot_reader(Slot* n)
     {
       assert(((uintptr_t)n & NEXT_POINTER_SHIFT) == 0);
-      if(is_read_only()) {
-        while (true)
+      while (true)
+      {
+        assert(next_slot() == nullptr);
+        uintptr_t old_status_val = status.load(std::memory_order_acquire);
+        uintptr_t new_status_val = old_status_val | ((uintptr_t)n) |
+          (NEXT_SLOT_READER_FLAG << NEXT_SLOT_TYPE_SHIFT);
+        Logging::cout() << "prev slot is_reader" << is_read_only()
+                        << " curr reader " << this
+                        << "old_status_val: " << old_status_val
+                        << " new_status_val: " << new_status_val
+                        << Logging::endl;
+        if (status.compare_exchange_strong(
+              old_status_val, new_status_val, std::memory_order_acq_rel))
         {
-          assert(next_slot() == nullptr);
-          uintptr_t old_status_val = status.load(std::memory_order_acquire);
-          uintptr_t new_status_val = old_status_val | ((uintptr_t)n) |
-            (NEXT_SLOT_READER_FLAG << NEXT_SLOT_TYPE_SHIFT);
-          Logging::cout() << "prev slot reader curr reader " << this
-                          << "old_status_val: " << old_status_val
-                          << " new_status_val: " << new_status_val
-                          << Logging::endl;
-          if (status.compare_exchange_strong(
-                old_status_val, new_status_val, std::memory_order_acq_rel))
-          {
-            if (
-              (old_status_val >> SLOT_ACTIVE_SHIFT) &
+          if(is_read_only()) {
+            if ((old_status_val >> SLOT_ACTIVE_SHIFT) &
               SLOT_ACTIVE_BITS == SLOT_ACTIVE_FLAG)
               return false;
             else
               return true;
           }
-        }
-      } else {
-        while (true)
-        {
-          assert(next_slot() == nullptr);
-          uintptr_t old_status_val = status.load(std::memory_order_acquire);
-          uintptr_t new_status_val = old_status_val | ((uintptr_t)n) |
-            (NEXT_SLOT_READER_FLAG << NEXT_SLOT_TYPE_SHIFT);
-          Logging::cout() << "prev slot writer curr reader " << this
-                          << "old_status_val: " << old_status_val
-                          << " new_status_val: " << new_status_val
-                          << Logging::endl;
-          if (status.compare_exchange_strong(
-                old_status_val, new_status_val, std::memory_order_acq_rel))
+          else
             return true;
         }
-      }
+      } 
     }
 
     BehaviourCore* next_behaviour()
@@ -292,15 +266,8 @@ namespace verona::rt
     void set_next_slot_writer(BehaviourCore* b)
     {
       assert(((uintptr_t)b & NEXT_POINTER_SHIFT) == 0);
-      while (true)
-      {
-        assert(next_slot() == nullptr);
-        uintptr_t old_status_val = status.load(std::memory_order_acquire);
-        uintptr_t new_status_val = old_status_val | ((uintptr_t)b);
-        if (status.compare_exchange_strong(
-              old_status_val, new_status_val, std::memory_order_acq_rel))
-          break;
-      }
+      status.store(status.load(std::memory_order_acquire) | ((uintptr_t)b),
+                  std::memory_order_release);
     }
 
     Cown* cown()
@@ -309,17 +276,9 @@ namespace verona::rt
                      << COWN_SHIFT);
     }
 
-    void set_cown(Cown* c)
+    void set_cown_null()
     {
-      while (true)
-      {
-        uintptr_t old_cown_val = _cown.load(std::memory_order_acquire);
-        uintptr_t new_cown_val =
-          ((uintptr_t)c) | (old_cown_val & ((1L << COWN_SHIFT) - 1));
-        if (_cown.compare_exchange_strong(
-              old_cown_val, new_cown_val, std::memory_order_acq_rel))
-          break;
-      }
+      _cown.store(0UL, std::memory_order_release);
     }
 
     void release();
@@ -343,15 +302,8 @@ namespace verona::rt
     void reset()
     {
       status.store(SLOT_BLOCKED_FLAG, std::memory_order_release);
-      while (true)
-      {
-        uintptr_t old_cown_val = _cown.load(std::memory_order_acquire);
-        uintptr_t new_cown_val =
-          old_cown_val | (SLOT_BLOCKED_FLAG << STATUS_SHIFT);
-        if (_cown.compare_exchange_strong(
-              old_cown_val, new_cown_val, std::memory_order_acq_rel))
-          break;
-      }
+      _cown.store(_cown.load(std::memory_order_acquire) | (SLOT_BLOCKED_FLAG << STATUS_SHIFT), 
+                  std::memory_order_release);
     }
 
     inline friend Logging::SysLog& operator<<(Logging::SysLog& os, Slot& s)
@@ -366,7 +318,7 @@ namespace verona::rt
         << " Is_reader bit: "
         << ((s._cown.load(std::memory_order_relaxed) >> CURR_SLOT_TYPE_SHIFT) &
             CURR_SLOT_TYPE_BITS)
-        << " Blocked: "
+        << " Is_Active: "
         << ((s.status.load(std::memory_order_relaxed) >> SLOT_ACTIVE_SHIFT) &
             SLOT_ACTIVE_BITS)
         << " Next pointer: "
@@ -720,7 +672,7 @@ namespace verona::rt
             ec[std::get<0>(indexes[i])]++;
 
             // We need to mark the slot as not having a cown associated to it.
-            std::get<1>(indexes[i])->set_cown(nullptr);
+            std::get<1>(indexes[i])->set_cown_null();
             continue;
           }
           else
