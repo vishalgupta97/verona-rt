@@ -21,7 +21,7 @@
  * single writer is running at a given point in time.
  */
 
-#define DEBUG_RW 1
+#define DEBUG_RW 0
 
 using namespace verona::cpp;
 
@@ -29,7 +29,7 @@ long num_buckets = 1;
 long num_dependent_buckets = 1;
 long num_entries_per_bucket = 128;
 long num_operations = 100'000'000;
-long rw_ratio = 90; // X% readers
+long rw_ratio = 90;
 long rw_ratio_denom = 100;
 long read_loop_count = 100;
 long write_loop_count = 100;

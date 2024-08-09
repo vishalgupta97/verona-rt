@@ -160,8 +160,10 @@ namespace verona::rt
 
     void set_read_only()
     {
-       _cown.store(_cown.load(std::memory_order_acquire) 
-              | (CURR_SLOT_READER_FLAG << CURR_SLOT_TYPE_SHIFT) , std::memory_order_release);
+      _cown.store(
+        _cown.load(std::memory_order_acquire) |
+          (CURR_SLOT_READER_FLAG << CURR_SLOT_TYPE_SHIFT),
+        std::memory_order_release);
     }
 
     bool is_next_slot_read_only()
@@ -178,8 +180,9 @@ namespace verona::rt
 
     void set_ready()
     {
-      _cown.store(_cown.load(std::memory_order_acquire) 
-              | (READY_FLAG << STATUS_SHIFT) , std::memory_order_release);
+      _cown.store(
+        _cown.load(std::memory_order_acquire) | (READY_FLAG << STATUS_SHIFT),
+        std::memory_order_release);
     }
 
     bool is_wait_2pl()
@@ -217,8 +220,7 @@ namespace verona::rt
     Slot* next_slot()
     {
       return (
-        Slot*)((status.load(std::memory_order_acquire) >> NEXT_POINTER_SHIFT)
-               << NEXT_POINTER_SHIFT);
+        Slot*)((status.load(std::memory_order_acquire) >> NEXT_POINTER_SHIFT) << NEXT_POINTER_SHIFT);
     }
 
     /**
@@ -242,8 +244,10 @@ namespace verona::rt
         if (status.compare_exchange_strong(
               old_status_val, new_status_val, std::memory_order_acq_rel))
         {
-          if(is_read_only()) {
-            if ((old_status_val >> SLOT_ACTIVE_SHIFT) &
+          if (is_read_only())
+          {
+            if (
+              (old_status_val >> SLOT_ACTIVE_SHIFT) &
               SLOT_ACTIVE_BITS == SLOT_ACTIVE_FLAG)
               return false;
             else
@@ -252,28 +256,28 @@ namespace verona::rt
           else
             return true;
         }
-      } 
+      }
     }
 
     BehaviourCore* next_behaviour()
     {
       assert(is_next_slot_writer());
       return (
-        BehaviourCore*)((status.load(std::memory_order_acquire) >> NEXT_POINTER_SHIFT)
-               << NEXT_POINTER_SHIFT);
+        BehaviourCore*)((status.load(std::memory_order_acquire) >> NEXT_POINTER_SHIFT) << NEXT_POINTER_SHIFT);
     }
 
     void set_next_slot_writer(BehaviourCore* b)
     {
       assert(((uintptr_t)b & NEXT_POINTER_SHIFT) == 0);
-      status.store(status.load(std::memory_order_acquire) | ((uintptr_t)b),
-                  std::memory_order_release);
+      status.store(
+        status.load(std::memory_order_acquire) | ((uintptr_t)b),
+        std::memory_order_release);
     }
 
     Cown* cown()
     {
-      return (Cown*)((_cown.load(std::memory_order_acquire) >> COWN_SHIFT)
-                     << COWN_SHIFT);
+      return (
+        Cown*)((_cown.load(std::memory_order_acquire) >> COWN_SHIFT) << COWN_SHIFT);
     }
 
     void set_cown_null()
@@ -302,8 +306,10 @@ namespace verona::rt
     void reset()
     {
       status.store(SLOT_BLOCKED_FLAG, std::memory_order_release);
-      _cown.store(_cown.load(std::memory_order_acquire) | (SLOT_BLOCKED_FLAG << STATUS_SHIFT), 
-                  std::memory_order_release);
+      _cown.store(
+        _cown.load(std::memory_order_acquire) |
+          (SLOT_BLOCKED_FLAG << STATUS_SHIFT),
+        std::memory_order_release);
     }
 
     inline friend Logging::SysLog& operator<<(Logging::SysLog& os, Slot& s)
@@ -649,8 +655,8 @@ namespace verona::rt
         // I.e. how many moves of cown_refs there were.
         size_t transfer_count = curr_slot->is_move();
 
-        Logging::cout() << "Processing " << cown << " " << body << " " << curr_slot
-                        << " Index " << i << Logging::endl;
+        Logging::cout() << "Processing " << cown << " " << body << " "
+                        << curr_slot << " Index " << i << Logging::endl;
 
         // Detect duplicates for this cown.
         // This is required in two cases:
@@ -744,7 +750,7 @@ namespace verona::rt
                 [prev_slot]() { return !prev_slot->is_wait_2pl(); });
               Aal::pause();
             }
-        
+
             if (prev_slot->set_next_slot_reader(curr_slot))
             {
               Logging::cout()
@@ -957,8 +963,10 @@ namespace verona::rt
         }
       }
 
-      if (is_next_slot_writer()) {
-        Logging::cout() << *this << "Reader setting next writer variable " << next_behaviour() << Logging::endl;
+      if (is_next_slot_writer())
+      {
+        Logging::cout() << *this << "Reader setting next writer variable "
+                        << next_behaviour() << Logging::endl;
         cown()->next_writer = next_behaviour();
       }
 
