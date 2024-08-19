@@ -43,7 +43,7 @@ endif()
 
 if(USE_EXECINFO)
   if (${CMAKE_BUILD_TYPE} MATCHES "Debug|RelWithDebInfo")
-    target_link_libraries(verona_rt INTERFACE -rdynamic)
+    target_link_libraries(verona_rt INTERFACE -rdynamic -g -fno-omit-frame-pointer)
   endif()
 
   find_library(LIBEXECINFO execinfo)
